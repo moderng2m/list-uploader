@@ -238,3 +238,15 @@ class TestAccess:
             )
         )
         assert status == 200 and len(jobs) == 2
+
+
+def test_presigned_links_use_sigv4(aws: None) -> None:
+    """S3 refuses SSE-KMS uploads signed with SigV2 (found on the first dev deploy)."""
+    from bff.app import signing_s3_client
+
+    s3 = signing_s3_client()
+    post = s3.generate_presigned_post(Bucket="any-bucket", Key="j_1/source.csv")
+    assert post["fields"]["x-amz-algorithm"] == "AWS4-HMAC-SHA256"
+    assert "AWSAccessKeyId" not in post["fields"] and "signature" not in post["fields"]
+    url = s3.generate_presigned_url("get_object", Params={"Bucket": "any-bucket", "Key": "k"})
+    assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in url

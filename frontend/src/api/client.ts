@@ -158,12 +158,13 @@ export async function uploadFile(upload: CreatedJob["upload"], file: File): Prom
   form.append("file", file); // must be the last field
   const res = await fetch(upload.url, { method: "POST", body: form });
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      res.status === 400
-        ? "The file was rejected by storage. Check it's under 10 MB and try again."
-        : "The upload didn't finish. Check your connection and try again.",
-    );
+    // S3 answers with XML; its code says whether the file or the upload link was the problem.
+    const code = /<Code>([^<]+)<\/Code>/.exec(await res.text().catch(() => ""))?.[1];
+    let message = "The upload didn't finish. Check your connection and try again.";
+    if (code === "EntityTooLarge") message = "The file is over 10 MB. Split it into smaller files and upload each one.";
+    else if (code === "EntityTooSmall") message = "The file is empty. Choose a file with your leads in it.";
+    else if (code) message = `Storage refused the upload (${code}). Try again; if it keeps happening, contact Marketing Tech Ops.`;
+    throw new ApiError(res.status, message);
   }
 }
 

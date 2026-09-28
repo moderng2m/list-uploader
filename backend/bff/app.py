@@ -15,6 +15,7 @@ from aws_lambda_powertools.event_handler.exceptions import (
     NotFoundError,
     UnauthorizedError,
 )
+from botocore.config import Config as BotoConfig
 
 from bff.auth import User, user_from_event
 from shared import config_defaults, messages
@@ -29,6 +30,20 @@ from shared.rows import RowRepo
 from shared.workato_client import FakeWorkatoClient, WorkatoClient
 
 app = APIGatewayHttpResolver()
+
+
+def signing_s3_client() -> Any:
+    """S3 client for the presigned upload POST and download GET.
+
+    The buckets use SSE-KMS, and S3 refuses KMS uploads signed with the legacy
+    SigV2 (`AWSAccessKeyId`/`signature` fields), which boto3 can still pick for
+    presigned POSTs. Pin SigV4 and the regional virtual-host endpoint.
+    """
+    return boto3.client(
+        "s3",
+        region_name=os.environ.get("AWS_REGION", "us-east-1"),
+        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+    )
 
 
 @dataclass
@@ -121,7 +136,7 @@ class BffDeps:
             bedrock_model_id=os.environ.get("BEDROCK_MODEL_ID", "fake-heuristic"),
             audit=audit,
             jobs=JobRepo(audit),
-            s3=boto3.client("s3"),
+            s3=signing_s3_client(),
             uploads_bucket=os.environ["UPLOADS_BUCKET"],
             start_parse=start_parse,
             rows=RowRepo(),

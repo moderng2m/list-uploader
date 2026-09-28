@@ -54,11 +54,26 @@ describe("upload flow", () => {
     expect(created).toBe(false);
   });
 
-  it("explains a storage rejection", async () => {
-    server.use(http.post(MOCK_UPLOAD_URL, () => new HttpResponse(null, { status: 400 })));
+  const s3Error = (code: string) =>
+    new HttpResponse(`<?xml version="1.0"?><Error><Code>${code}</Code><Message>m</Message></Error>`, {
+      status: 400,
+      headers: { "content-type": "application/xml" },
+    });
+
+  it("says when the file is too large", async () => {
+    server.use(http.post(MOCK_UPLOAD_URL, () => s3Error("EntityTooLarge")));
     renderUpload();
     await chooseAndSubmit(new File(["Company\nAcme\n"], "leads.csv"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("rejected by storage");
+    expect(await screen.findByRole("alert")).toHaveTextContent("over 10 MB");
+  });
+
+  it("shows storage's reason for any other refusal", async () => {
+    server.use(http.post(MOCK_UPLOAD_URL, () => s3Error("InvalidArgument")));
+    renderUpload();
+    await chooseAndSubmit(new File(["Company\nAcme\n"], "leads.csv"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Storage refused the upload (InvalidArgument)");
+    expect(alert).not.toHaveTextContent("10 MB");
   });
 
   it("new uploads and parse failures appear in history", async () => {
