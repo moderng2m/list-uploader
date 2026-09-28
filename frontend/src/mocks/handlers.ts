@@ -3,6 +3,8 @@ import { API_BASE } from "../api/client";
 import type { BulkAction, EnrichmentDecision, Job, JobState, RowChange, SendConfirmation } from "../api/types";
 import { mockAnalysis, mockBulk, mockEdit, mockRows, resetAnalysisMock } from "./analysisMock";
 import { mockDecide, mockEnrichment, resetEnrichmentMock } from "./enrichmentMock";
+import { Conflict, Invalid, mockAdmin, resetAdminMock } from "./adminMock";
+import { mockAuditSearch, mockRowHistory, mockTimeline } from "./auditMock";
 import * as f from "./fixtures";
 import { finishSend, mockDownload, mockGate, mockResult, mockRetry, mockSend, resetSendMock } from "./sendMock";
 
@@ -32,6 +34,7 @@ export function resetMockJobs() {
   resetAnalysisMock();
   resetEnrichmentMock();
   resetSendMock();
+  resetAdminMock();
   moved.clear();
 }
 
@@ -68,6 +71,18 @@ function advance(job: Job): Job {
   return next;
 }
 
+/** Run an admin change; its validation and version errors become 400/409. */
+async function adminChange(request: Request, apply: (body: Record<string, any>) => unknown) {
+  const body = (await request.json()) as Record<string, any>;
+  try {
+    return HttpResponse.json(apply(body) as object);
+  } catch (e) {
+    if (e instanceof Conflict || e instanceof Invalid)
+      return HttpResponse.json({ message: e.message }, { status: e.status });
+    throw e;
+  }
+}
+
 function withJob(id: unknown, respond: (job: Job) => Response) {
   const job = findJob(String(id));
   return job ? respond(job) : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
@@ -83,6 +98,15 @@ function start(id: string, state: JobState) {
 export const handlers = [
   http.get(u("/me"), () => HttpResponse.json(f.me)),
   http.get(u("/jobs"), () => HttpResponse.json([...created.values()].reverse().concat(f.jobs))),
+  http.get(u("/jobs/:id/timeline"), ({ params, request }) =>
+    withJob(params.id, (job) =>
+      HttpResponse.json(mockTimeline(job.job_id, new URL(request.url).searchParams.get("rows") === "true")),
+    ),
+  ),
+  http.get(u("/jobs/:id/rows/:rowId/history"), ({ params }) => {
+    const history = mockRowHistory(Number(params.rowId));
+    return history ? HttpResponse.json(history) : HttpResponse.json({ message: "We couldn't find that row." }, { status: 404 });
+  }),
   http.post(u("/jobs"), async ({ request }) => {
     const body = (await request.json()) as { filename: string; enrich: boolean };
     counter += 1;
@@ -174,6 +198,42 @@ export const handlers = [
   ),
   http.get(u("/jobs/:id/result"), ({ params }) => withJob(params.id, (job) => HttpResponse.json(mockResult(job)))),
   http.get(u("/jobs/:id/download"), ({ params }) => withJob(params.id, (job) => HttpResponse.json(mockDownload(job)))),
-  http.get(u("/admin/lead-sources"), () => HttpResponse.json(f.leadSources)),
-  http.get(u("/admin/config"), () => HttpResponse.json(f.adminConfig)),
+  http.get(u("/admin/config"), () => HttpResponse.json(mockAdmin.config())),
+  http.put(u("/admin/thresholds"), ({ request }) => adminChange(request, (b) => mockAdmin.thresholds(b.version, b.values))),
+  http.get(u("/admin/lead-sources"), () => HttpResponse.json(mockAdmin.sources())),
+  http.post(u("/admin/lead-sources"), ({ request }) => adminChange(request, (b) => mockAdmin.addSource(b.version, b.value))),
+  http.put(u("/admin/lead-sources/order"), ({ request }) =>
+    adminChange(request, (b) => mockAdmin.reorderSources(b.version, b.ids)),
+  ),
+  http.patch(u("/admin/lead-sources/:id"), ({ params, request }) =>
+    adminChange(request, (b) => mockAdmin.changeSource(b.version, String(params.id), b)),
+  ),
+  http.get(u("/admin/aliases"), () => HttpResponse.json(mockAdmin.aliases())),
+  http.put(u("/admin/aliases/:field"), ({ params, request }) =>
+    adminChange(request, (b) => mockAdmin.replaceAliases(b.version, String(params.field), b.aliases)),
+  ),
+  http.get(u("/admin/ai-mappings"), () => HttpResponse.json(mockAdmin.aiMappings())),
+  http.post(u("/admin/aliases/promote"), ({ request }) =>
+    adminChange(request, (b) => mockAdmin.promote(b.version, b.source_header, b.field_key)),
+  ),
+  http.get(u("/admin/audit"), ({ request }) => {
+    const filters = Object.fromEntries(new URL(request.url).searchParams);
+    if (!Object.values(filters).some(Boolean))
+      return HttpResponse.json(
+        { message: "Enter at least one search term: email, job, user, campaign, event, or date." },
+        { status: 400 },
+      );
+    return HttpResponse.json(mockAuditSearch(filters));
+  }),
+  http.post(u("/admin/audit/export"), async ({ request }) => {
+    const result = mockAuditSearch((await request.json()) as Record<string, string>);
+    const lines = ["occurred_at,event_type,job_id,row_id,summary", ...result.events.map((e) =>
+      [e.occurred_at, e.event_type, e.job_id ?? "", e.row_id ?? "", `"${e.summary.replace(/"/g, '""')}"`].join(","))];
+    return HttpResponse.json({
+      url: `data:text/csv;charset=utf-8,${encodeURIComponent(lines.join("\r\n"))}`,
+      filename: "audit-demo.csv",
+      events: result.events.length,
+      truncated: false,
+    });
+  }),
 ];

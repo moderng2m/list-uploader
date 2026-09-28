@@ -24,6 +24,9 @@ function JobSteps({ jobId }: { jobId: string }) {
           </li>
         ))}
       </ol>
+      <NavLink className="timeline-link" to={`/jobs/${jobId}/timeline`}>
+        Timeline
+      </NavLink>
     </nav>
   );
 }

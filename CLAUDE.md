@@ -28,13 +28,17 @@ account) are a **build environment**, not TriNet's. See SPEC decision D15.
 backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
   shared/                code shared by every Lambda
     audit.py             audit event schema, EventType catalog, fail-closed writer
+    audit_read.py        timeline / row / email-hash / search queries (read only)
+    audit_text.py        plain-English event summaries and provenance labels
+    lineage.py           per-field value lineage for the row history drawer
     observability.py     Powertools logger/tracer/metrics + PII scrubber
     workato_client.py    WorkatoClient protocol, guards, FakeWorkatoClient
     bedrock_client.py    JSON-only Claude calls (validate, retry once, degrade)
     parsing.py           CSV/XLSX -> string rows (SPEC §7.1); no type inference
     catalog.py           field catalog (SPEC §8), seed aliases, header normalization
     mapping.py           exact -> alias -> AI column mapping; confirmation rules
-    config_store.py      Config table reads (aliases, thresholds) with seed fallback
+    config_store.py      Config table (aliases, lead sources, thresholds): seed
+                         fallback, versioned admin writes
     fake_ai.py           HeuristicFakeBedrock: the "AI" in dev (INTEGRATIONS=fake)
     sfdc_ids.py          campaign ID checks, 15 -> 18 checksum (SPEC §11.3)
     normalizer.py        Normalizer protocol, v5 adapter, stand-in; §11.2 field rules
@@ -236,6 +240,44 @@ Decisions made while building P5:
 - Processed-file cells starting with `=`, `@`, tab, CR, or a non-numeric `+`/`-`
   get a leading apostrophe (CSV formula injection).
 
+## History, admin, audit (P6)
+
+- **Timeline** `GET /jobs/{id}/timeline` (owner or admin): job-level events, oldest
+  first, paged by `sk` cursor; `?rows=true` adds per-row events. Summaries come
+  from `audit_text.summarize` and never include values; before/after are in the
+  expandable details.
+- **Row history** `GET /jobs/{id}/rows/{row_id}/history`: `lineage.field_lineage`
+  rebuilds each field from its source cell through every event that set it to the
+  current value. Row events now carry each field's own provenance in
+  `details.provenance`. Once a Row has expired, only its events are returned.
+- **Admin settings** (lead sources, thresholds, aliases) are one Config item each
+  with a `version`. A change sends the version it was based on; the new item and
+  its ADMIN_CONFIG_CHANGED (before/after) are written in one transaction
+  conditioned on that version, so a stale edit gets 409. Lead sources are never
+  deleted, only deactivated. Jobs keep the lead source list and thresholds in their
+  own analysis snapshot, so admin changes only affect new analyses.
+- **Promote AI mapping:** `GET /admin/ai-mappings` lists column matches the AI made
+  and users kept (SUGGESTION_ACCEPTED on `column_mapping`) that no alias covers yet;
+  `POST /admin/aliases/promote` adds one as an alias.
+- **Audit search** `GET /admin/audit`: email (hashed, via the `by_email` index), job,
+  user, campaign (the jobs whose context has it), event type, date range. The
+  narrowest source is read first and the rest filter it; otherwise it scans, which
+  is fine at this volume (Athena over the archive is the answer past that).
+  Export `POST /admin/audit/export` writes AUDIT_EXPORTED (filters with the email
+  hashed, never plaintext) before handing out a 5-minute link.
+- The BFF role can Query/Scan AuditEvents (table and indexes) and still holds no
+  Update/Delete; `infra/tests/test_synth.py` checks both.
+
+Decisions made while building P6:
+- AUDIT_EXPORTED is a new event type (the spec says exports are audited but names
+  no event). Searches themselves aren't audited; only exports are.
+- Email search finds jobs through per-row events carrying the email hash. Analysis
+  writes those for every row in practice (derived values or issues), but jobs that
+  were never analyzed can't be found by email: the email column isn't known until
+  the mapping is confirmed.
+- A threshold change requires junk_block >= junk_flag.
+- An alias can't duplicate another field's alias or any field's own name/key.
+
 ## Phase status
 
 - P0 scaffold: done.
@@ -244,4 +286,5 @@ Decisions made while building P5:
 - P3 analysis: done except the golden-output test (needs normalizer v5).
 - P4 enrichment: done (fake ZoomInfo).
 - P5 gate and send: done (fake Post to Eloqua).
-- Next: P6 (history, admin, audit).
+- P6 history, admin, audit: done.
+- Next: P7 (hardening and deploy).

@@ -66,6 +66,8 @@ class EventType(StrEnum):
     PROCESSED_FILE_DOWNLOADED = "PROCESSED_FILE_DOWNLOADED"
     ADMIN_CONFIG_CHANGED = "ADMIN_CONFIG_CHANGED"
     ACCESS_DENIED = "ACCESS_DENIED"
+    # Not in the SPEC §21.2.3 table: the audit export is itself audited (§21.2.6).
+    AUDIT_EXPORTED = "AUDIT_EXPORTED"
 
 
 class ActorType(StrEnum):
@@ -194,6 +196,10 @@ class AuditWriter:
     @property
     def app_version(self) -> str:
         return self._app_version
+
+    @property
+    def table_name(self) -> str:
+        return self._table_name
 
     def write(self, event: AuditEvent) -> AuditEvent:
         item = event.to_item(env=self._env, app_version=self._app_version)

@@ -1,6 +1,10 @@
 import type {
   AdminConfig,
+  AiMapping,
+  Aliases,
   Analysis,
+  AuditFilters,
+  AuditSearchResult,
   BulkAction,
   EnrichmentDecision,
   Row,
@@ -10,11 +14,13 @@ import type {
   Enrichment,
   GateResult,
   Job,
-  LeadSource,
+  LeadSources,
   Mapping,
   Me,
+  RowHistory,
   SendConfirmation,
   SendResult,
+  Timeline,
 } from "./types";
 
 // In mock mode (default) MSW answers these requests in the browser.
@@ -43,7 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<Me>("/me"),
-  listJobs: () => request<Job[]>("/jobs"),
+  listJobs: (all = false) => request<Job[]>(all ? "/jobs?all=true" : "/jobs"),
   getJob: (id: string) => request<Job>(`/jobs/${id}`),
   createJob: (filename: string, enrich: boolean) =>
     request<CreatedJob>("/jobs", {
@@ -93,8 +99,47 @@ export const api = {
     request<{ job_id: string; state: string; row_ids: number[] }>(`/jobs/${id}/retry-failed`, { method: "POST" }),
   getResult: (id: string) => request<SendResult>(`/jobs/${id}/result`),
   download: (id: string) => request<{ url: string; filename: string; expires_in: number }>(`/jobs/${id}/download`),
-  leadSources: () => request<LeadSource[]>("/admin/lead-sources"),
+  getTimeline: (id: string, opts: { rows?: boolean; cursor?: string | null } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.rows) q.set("rows", "true");
+    if (opts.cursor) q.set("cursor", opts.cursor);
+    return request<Timeline>(`/jobs/${id}/timeline?${q.toString()}`);
+  },
+  getRowHistory: (id: string, rowId: number) => request<RowHistory>(`/jobs/${id}/rows/${rowId}/history`),
+
+  // Admin (SPEC §6.8). Every change sends the version it was based on.
   adminConfig: () => request<AdminConfig>("/admin/config"),
+  updateThresholds: (version: string, values: Record<string, number>) =>
+    request<AdminConfig>("/admin/thresholds", { method: "PUT", body: JSON.stringify({ version, values }) }),
+  leadSources: () => request<LeadSources>("/admin/lead-sources"),
+  addLeadSource: (version: string, value: string) =>
+    request<LeadSources>("/admin/lead-sources", { method: "POST", body: JSON.stringify({ version, value }) }),
+  changeLeadSource: (version: string, id: string, change: { value?: string; active?: boolean }) =>
+    request<LeadSources>(`/admin/lead-sources/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ version, ...change }),
+    }),
+  reorderLeadSources: (version: string, ids: string[]) =>
+    request<LeadSources>("/admin/lead-sources/order", { method: "PUT", body: JSON.stringify({ version, ids }) }),
+  aliases: () => request<Aliases>("/admin/aliases"),
+  replaceAliases: (version: string, fieldKey: string, aliases: string[]) =>
+    request<Aliases>(`/admin/aliases/${fieldKey}`, { method: "PUT", body: JSON.stringify({ version, aliases }) }),
+  aiMappings: () => request<{ items: AiMapping[] }>("/admin/ai-mappings"),
+  promoteAlias: (version: string, sourceHeader: string, fieldKey: string) =>
+    request<Aliases>("/admin/aliases/promote", {
+      method: "POST",
+      body: JSON.stringify({ version, source_header: sourceHeader, field_key: fieldKey }),
+    }),
+  auditSearch: (filters: AuditFilters) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    return request<AuditSearchResult>(`/admin/audit?${q.toString()}`);
+  },
+  auditExport: (filters: AuditFilters) =>
+    request<{ url: string; filename: string; events: number; truncated: boolean }>("/admin/audit/export", {
+      method: "POST",
+      body: JSON.stringify(filters),
+    }),
 };
 
 /** Upload straight to S3 with the presigned POST from createJob. */

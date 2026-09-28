@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { RowProblem, SendResult } from "../api/types";
+import { RowHistoryDrawer } from "../components/RowHistoryDrawer";
 import { Async, PageHeader, Stat } from "../components/ui";
 import { useApi } from "../components/useApi";
 import { useJobPoll } from "../components/useJobPoll";
@@ -41,15 +42,22 @@ function ResultLoader({ jobId, state, onRetried }: { jobId: string; state: strin
   return <Async state={result}>{(r) => <ResultView jobId={jobId} r={r} onRetried={onRetried} />}</Async>;
 }
 
-function ProblemList({ items }: { items: RowProblem[] }) {
+function ProblemList({ jobId, items }: { jobId: string; items: RowProblem[] }) {
+  const [historyOf, setHistoryOf] = useState<number | null>(null);
   return (
-    <ul>
-      {items.map((f) => (
-        <li key={f.row_id}>
-          Row {f.row_id} ({f.email}): {f.reason}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul>
+        {items.map((f) => (
+          <li key={f.row_id}>
+            Row {f.row_id} ({f.email}): {f.reason}{" "}
+            <button type="button" className="link" onClick={() => setHistoryOf(f.row_id)} aria-label={`History of row ${f.row_id}`}>
+              History
+            </button>
+          </li>
+        ))}
+      </ul>
+      {historyOf != null && <RowHistoryDrawer jobId={jobId} rowId={historyOf} onClose={() => setHistoryOf(null)} />}
+    </>
   );
 }
 
@@ -128,7 +136,7 @@ function ResultView({ jobId, r, onRetried }: { jobId: string; r: SendResult; onR
           <h2>
             {r.failed.length} {r.failed.length === 1 ? "row" : "rows"} failed
           </h2>
-          <ProblemList items={r.failed} />
+          <ProblemList jobId={jobId} items={r.failed} />
           <button type="button" className="primary" onClick={retry} disabled={busy}>
             Retry failed rows
           </button>
@@ -143,7 +151,7 @@ function ResultView({ jobId, r, onRetried }: { jobId: string; r: SendResult; onR
             No answer came back for these, so they may or may not have reached Eloqua. They aren't retried
             automatically, so a lead isn't sent twice. Ask Marketing Ops to check them in Eloqua.
           </p>
-          <ProblemList items={r.unconfirmed} />
+          <ProblemList jobId={jobId} items={r.unconfirmed} />
         </section>
       )}
     </>

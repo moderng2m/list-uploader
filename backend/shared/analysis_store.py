@@ -122,7 +122,12 @@ def row_events(
                 before={k: old_processed.get(k) for k in after} if after else None,
                 after=after or None,
                 reason=reason or ",".join(sorted({ev.provenance[k] for k in after})) or None,
-                details=extra.get(event_type),
+                # Each field's own provenance, for the row history's value lineage.
+                details={
+                    **(extra.get(event_type) or {}),
+                    **({"provenance": {k: ev.provenance[k] for k in after}} if after else {}),
+                }
+                or None,
                 lead_email=email,
                 correlation_id=correlation_id,
             )

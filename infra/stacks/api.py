@@ -14,7 +14,7 @@ from constructs import Construct
 from infra.config import EnvConfig
 from infra.lambda_code import ARCH, RUNTIME, backend_code
 from infra.stacks.auth import AuthStack
-from infra.stacks.storage import StorageStack, grant_audit_append
+from infra.stacks.storage import StorageStack, grant_audit_append, grant_audit_read
 from infra.stacks.workflows import WorkflowsStack
 
 
@@ -122,6 +122,7 @@ class ApiStack(Stack):
         )
         storage.processed.grant_read_write(self.bff)
         grant_audit_append(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
+        grant_audit_read(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
         storage.key.grant_encrypt_decrypt(self.bff)
         self.parse_task.grant_invoke(self.bff)
         for name in ("Analyze", "Enrich", "Send"):

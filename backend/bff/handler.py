@@ -7,14 +7,15 @@ from typing import Any
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from bff import (  # noqa: F401  (registers routes)
+    admin_api,
     analysis_api,
+    audit_api,
     enrichment_api,
     jobs_api,
     mapping_api,
     send_api,
 )
-from bff.app import app, current_user, require_admin
-from shared import config_defaults
+from bff.app import app, current_user
 from shared.observability import logger, metrics, tracer
 
 
@@ -27,12 +28,6 @@ def health() -> dict[str, str]:
 def me() -> dict[str, Any]:
     user = current_user()
     return {"email": user.email, "is_admin": user.is_admin}
-
-
-@app.get("/admin/config")
-def admin_config() -> dict[str, Any]:
-    require_admin("/admin/config")
-    return {"thresholds": config_defaults.THRESHOLDS, "limits": config_defaults.LIMITS}
 
 
 @logger.inject_lambda_context(correlation_id_path="requestContext.requestId")

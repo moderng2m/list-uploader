@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Analysis, BulkAction, CampaignCard, Issue, Row, RowChange } from "../api/types";
 import { Async, PageHeader, SeverityBadge, StatusBadge, SummaryCards } from "../components/ui";
+import { RowHistoryDrawer } from "../components/RowHistoryDrawer";
 import { useApi } from "../components/useApi";
 import { useJobPoll } from "../components/useJobPoll";
 
@@ -279,9 +280,12 @@ function RowsGrid({
   onChange: (rowId: number, change: RowChange) => void;
   onBulk: (action: BulkAction, params: Record<string, unknown>) => void;
 }) {
+  const { jobId = "" } = useParams();
+  const [historyOf, setHistoryOf] = useState<number | null>(null);
   if (rows.length === 0) return <p className="muted">No rows match.</p>;
   return (
     <div className="table-wrap">
+      {historyOf != null && <RowHistoryDrawer jobId={jobId} rowId={historyOf} onClose={() => setHistoryOf(null)} />}
       <table className="grid rows-grid">
         <thead>
           <tr>
@@ -295,7 +299,15 @@ function RowsGrid({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <RowLine key={r.row_id} row={r} analysis={analysis} editable={editable} onChange={onChange} onBulk={onBulk} />
+            <RowLine
+              key={r.row_id}
+              row={r}
+              analysis={analysis}
+              editable={editable}
+              onChange={onChange}
+              onBulk={onBulk}
+              onHistory={() => setHistoryOf(r.row_id)}
+            />
           ))}
         </tbody>
       </table>
@@ -309,12 +321,14 @@ function RowLine({
   editable,
   onChange,
   onBulk,
+  onHistory,
 }: {
   row: Row;
   analysis: Analysis;
   editable: boolean;
   onChange: (rowId: number, change: RowChange) => void;
   onBulk: (action: BulkAction, params: Record<string, unknown>) => void;
+  onHistory: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -366,6 +380,11 @@ function RowLine({
               </label>
             </>
           ))}
+        {!editing && (
+          <button type="button" onClick={onHistory} aria-label={`History of row ${row.row_id}`}>
+            History
+          </button>
+        )}
       </td>
       {GRID_FIELDS.map((f) => {
         const value = row.processed[f.key] ?? "";

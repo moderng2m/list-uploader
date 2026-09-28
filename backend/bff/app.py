@@ -19,6 +19,7 @@ from aws_lambda_powertools.event_handler.exceptions import (
 from bff.auth import User, user_from_event
 from shared import config_defaults, messages
 from shared.audit import AuditEvent, AuditWriteError, AuditWriter, EventType, StateConflict
+from shared.audit_read import AuditReader
 from shared.config_store import ConfigStore
 from shared.fake_sfdc import CAMPAIGNS
 from shared.ids import new_ulid
@@ -49,6 +50,8 @@ class BffDeps:
     send_to_prod: bool = False
     raw_file_retention_days: int = 90
     max_bytes: int = config_defaults.LIMITS["max_file_bytes"]
+    # None: read the table the audit writer writes to.
+    audit_reader: AuditReader | None = None
 
     @classmethod
     def from_env(cls) -> BffDeps:

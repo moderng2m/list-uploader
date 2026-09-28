@@ -184,3 +184,28 @@ SEND_FAILED = (
     "Tech Ops before retrying."
 )
 RESULT = "{n} leads submitted to Eloqua for {campaigns} on {datetime}."
+
+# --- History, admin, audit (SPEC §6.7, §6.8, §21.2.6) ---
+ROW_NOT_FOUND = "We couldn't find that row."
+CONFIG_CHANGED = (
+    "Someone else changed this setting while you were editing. Reload the page to see the "
+    "latest version, then make your change again."
+)
+LEAD_SOURCE_BLANK = "Enter a lead source value."
+LEAD_SOURCE_TOO_LONG = "Lead source values can be at most 255 characters."
+LEAD_SOURCE_DUPLICATE = "'{value}' is already in the list."
+LEAD_SOURCE_NOT_FOUND = "We couldn't find that lead source. Reload the page and try again."
+LEAD_SOURCE_ORDER_MISMATCH = "The new order must list every lead source exactly once."
+THRESHOLD_UNKNOWN = "'{key}' isn't a setting you can change here."
+THRESHOLD_RANGE = "{key} must be a number between 0 and 1."
+THRESHOLD_JUNK_ORDER = (
+    "The junk block threshold must be at least the junk flag threshold, or flagged rows "
+    "could be blocked without ever being flagged."
+)
+ALIAS_FIELD_UNKNOWN = "'{field}' isn't a field in the catalog."
+ALIAS_BLANK = "Aliases can't be blank."
+ALIAS_TAKEN = "'{alias}' already maps to {field}. Remove it there first."
+ALIAS_IS_LABEL = "'{alias}' is already the name of the field {field}; it doesn't need an alias."
+PROMOTE_NOT_AI = "Only a column the AI matched, and the user kept, can be saved as an alias."
+AUDIT_SEARCH_EMPTY = "Enter at least one search term: email, job, user, campaign, event, or date."
+AUDIT_DATE_INVALID = "Dates must look like 2026-09-28."

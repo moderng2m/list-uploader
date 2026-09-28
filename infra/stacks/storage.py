@@ -236,6 +236,20 @@ def grant_audit_append(grantee: iam.IRole, table: ddb.ITableV2) -> None:
     deny_audit_mutation(grantee, table)
 
 
+AUDIT_READ_ACTIONS = ["dynamodb:Query", "dynamodb:Scan"]
+
+
+def grant_audit_read(grantee: iam.IRole, table: ddb.ITableV2) -> None:
+    """Timeline, row history and admin search (SPEC §21.2.6). Read-only; the explicit
+    denies from `grant_audit_append` still apply."""
+    grantee.add_to_principal_policy(
+        iam.PolicyStatement(
+            actions=AUDIT_READ_ACTIONS,
+            resources=[table.table_arn, f"{table.table_arn}/index/*"],
+        )
+    )
+
+
 def deny_audit_mutation(grantee: iam.IRole, table: ddb.ITableV2) -> None:
     grantee.add_to_principal_policy(
         iam.PolicyStatement(

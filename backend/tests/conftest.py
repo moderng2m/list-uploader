@@ -51,7 +51,22 @@ def _table(name: str, pk: tuple[str, str], sk: tuple[str, str] | None = None, **
 
 @pytest.fixture
 def audit_table(aws: None) -> Any:
-    return _table(AUDIT_TABLE, ("job_id", "S"), ("sk", "S"))
+    # Same keys and person-lookup index as infra/stacks/storage.py.
+    return _table(
+        AUDIT_TABLE,
+        ("job_id", "S"),
+        ("sk", "S"),
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "by_email",
+                "KeySchema": [
+                    {"AttributeName": "email_sha256", "KeyType": "HASH"},
+                    {"AttributeName": "sk", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+    )
 
 
 @pytest.fixture

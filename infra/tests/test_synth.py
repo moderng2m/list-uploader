@@ -70,14 +70,17 @@ def test_no_role_can_update_or_delete_audit_events(stacks: dict[str, Stack]) -> 
     assert checked > 0, "expected at least one grant on AuditEvents"
 
 
-def test_bff_has_put_only_and_explicit_deny(stacks: dict[str, Stack]) -> None:
+def test_bff_can_append_and_read_but_not_change(stacks: dict[str, Stack]) -> None:
     audit_id = _audit_logical_id(stacks)
     stmts = _statements(_templates(stacks)["api"])
     on_audit = [s for s in stmts if audit_id in json.dumps(s.get("Resource"))]
     allowed = {a for s in on_audit if s["Effect"] == "Allow" for a in _as_list(s["Action"])}
     denied = {a for s in on_audit if s["Effect"] == "Deny" for a in _as_list(s["Action"])}
-    assert allowed == {"dynamodb:PutItem"}
+    # Put to append; Query/Scan for the timeline, row history and admin search.
+    assert allowed == {"dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan"}
     assert set(AUDIT_FORBIDDEN_ACTIONS) <= denied
+    # The denies cover the email index too.
+    assert any("/*" in json.dumps(s["Resource"]) for s in on_audit if s["Effect"] == "Deny")
 
 
 def test_audit_table_is_protected(stacks: dict[str, Stack]) -> None:

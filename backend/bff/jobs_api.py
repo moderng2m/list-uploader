@@ -22,7 +22,13 @@ _HIDDEN = ("owner_sub", "upload_key")
 
 
 def job_view(job: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in job.items() if k not in _HIDDEN}
+    view = {k: v for k, v in job.items() if k not in _HIDDEN}
+    # Campaign names for the history list (SPEC §6.7).
+    campaigns = ((job.get("analysis_context") or {}).get("campaigns")) or {}
+    view["campaigns"] = sorted(
+        {str(c.get("name") or cid) for cid, c in campaigns.items() if isinstance(c, dict)}
+    )
+    return view
 
 
 @app.post("/jobs")

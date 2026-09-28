@@ -264,12 +264,112 @@ export interface SendResult {
   last_error: { stage: string; message: string } | null;
 }
 
-export interface LeadSource {
+export interface LeadSourceItem {
+  id: string;
   value: string;
   active: boolean;
+  order: number;
+}
+
+/** Admin settings carry the version the admin saw; a stale one gets 409. */
+export interface LeadSources {
+  version: string;
+  items: LeadSourceItem[];
 }
 
 export interface AdminConfig {
+  version: string;
   thresholds: Record<string, number>;
   limits: Record<string, number>;
 }
+
+export interface FieldAliases {
+  key: string;
+  label: string;
+  aliases: string[];
+}
+
+export interface Aliases {
+  version: string;
+  fields: FieldAliases[];
+}
+
+export interface AiMapping {
+  source_header: string;
+  field_key: string;
+  field_label: string;
+  times: number;
+  job_ids: string[];
+  last_at: string;
+}
+
+export interface AuditEventView {
+  event_id: string;
+  event_type: string;
+  occurred_at: string;
+  job_id: string | null;
+  row_id: number | null;
+  actor: { type: "user" | "system" | "admin"; email: string | null };
+  /** Plain English, no values. */
+  summary: string;
+  reason: string | null;
+  subject: Record<string, unknown> | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface Timeline {
+  events: AuditEventView[];
+  next_cursor: string | null;
+}
+
+export interface LineageStep {
+  kind: string;
+  value: string;
+  label: string;
+  at?: string;
+  event_id?: string;
+  column?: string;
+}
+
+export interface FieldLineage {
+  field: string;
+  label: string;
+  current: string;
+  provenance: string | null;
+  provenance_text: string;
+  steps: LineageStep[];
+  explained: boolean;
+}
+
+export interface RowHistory {
+  row_id: number;
+  /** False once the row has expired; the audit events remain. */
+  row_available: boolean;
+  status: RowStatus | null;
+  excluded: boolean;
+  normalizer_version: string;
+  fields: FieldLineage[];
+  enrichment: Record<string, unknown> | null;
+  send: { status: SendStatus; attempts?: number; http_status?: number; error?: string; submitted_at?: string } | null;
+  events: AuditEventView[];
+}
+
+export interface AuditFilters {
+  email?: string;
+  job_id?: string;
+  user?: string;
+  campaign_id?: string;
+  event_type?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface AuditSearchResult {
+  events: AuditEventView[];
+  truncated: boolean;
+  /** For an email search: every upload that included the person. */
+  jobs: { job_id: string; filename: string | null; owner_email: string | null; state: JobState | null; created_at: string | null }[];
+}
+

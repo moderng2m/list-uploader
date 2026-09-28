@@ -5,7 +5,6 @@ import type {
   Analysis,
   Enrichment,
   Job,
-  LeadSource,
   Issue,
   Mapping,
   Me,
@@ -282,14 +281,8 @@ export const enrichment: Enrichment = {
   notes: [],
 };
 
-export const leadSources: LeadSource[] = [
-  { value: "Marketing: Events", active: true },
-  { value: "Marketing: Webinar", active: true },
-  { value: "Marketing: Content Syndication", active: true },
-  { value: "Marketing: Trade Show (retired)", active: false },
-];
-
 export const adminConfig: AdminConfig = {
+  version: "seed",
   thresholds: {
     mapping_suggest_threshold: 0.75,
     lead_source_auto_threshold: 0.9,
