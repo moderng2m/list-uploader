@@ -145,6 +145,7 @@ export interface Row {
   issues: Issue[];
   user_edits: { field: string; from: string; to: string; by: string; at: string }[];
   dismissed: string[];
+  send?: { status: SendStatus; attempts?: number; error?: string };
 }
 
 export interface RowsPage {
@@ -212,19 +213,55 @@ export interface Enrichment {
   notes: string[];
 }
 
+export interface CampaignGroup {
+  campaign_id: string;
+  campaign_name: string;
+  status: string;
+  rows: number;
+}
+
+/** What the user confirms; the server rejects the send if it no longer matches. */
+export interface SendConfirmation {
+  rows_to_send: number;
+  by_campaign: { campaign_id: string; status: string; rows: number }[];
+}
+
 export interface GateResult {
   passed: boolean;
   reasons: string[];
-  by_campaign: { campaign_id: string; campaign_name: string; status: string; rows: number }[];
+  reason_codes: string[];
+  by_campaign: CampaignGroup[];
+  rows_to_send: number;
+  campaign_count: number;
+  excluded: number;
+  /** Field labels with values that won't go to Eloqua (OQ-1). */
   not_sent_fields: string[];
+  sent_fields: string[];
+  campaigns_stale: boolean;
+  state: JobState;
+  can_send: boolean;
+  send_to_prod: boolean;
+}
+
+export type SendStatus = "not_sent" | "sending" | "submitted" | "failed";
+
+export interface RowProblem {
+  row_id: number;
+  email: string;
+  reason: string;
 }
 
 export interface SendResult {
+  state: JobState;
   submitted: number;
-  failed: { row_id: number; email: string; reason: string }[];
-  campaigns: { name: string; rows: number }[];
-  submitted_at: string;
-  submitted_by: string;
+  failed: RowProblem[];
+  /** Posted but no answer came back: may or may not have reached Eloqua. */
+  unconfirmed: RowProblem[];
+  campaigns: { id: string; name: string; rows: number }[];
+  submitted_at: string | null;
+  submitted_by: string | null;
+  send_to_prod: boolean;
+  last_error: { stage: string; message: string } | null;
 }
 
 export interface LeadSource {

@@ -18,6 +18,12 @@ class EnvConfig:
     raw_file_retention_days: int = 90
     audit_retention_days: int = 730
     log_retention_days: int = 90
+    # Parallel Post to Eloqua calls (SPEC §5.2): Map items in flight, 25 rows each.
+    send_max_concurrency: int = 5
+
+    def __post_init__(self) -> None:
+        if self.send_to_prod and self.name != "prod":
+            raise ValueError(f"send_to_prod must be false outside prod (env={self.name})")
 
 
 ENVS: dict[str, EnvConfig] = {

@@ -106,6 +106,7 @@ class ApiStack(Stack):
                 "PARSE_FUNCTION": self.parse_task.function_name,
                 "ANALYZE_STATE_MACHINE": workflows.state_machines["Analyze"].state_machine_arn,
                 "ENRICH_STATE_MACHINE": workflows.state_machines["Enrich"].state_machine_arn,
+                "SEND_STATE_MACHINE": workflows.state_machines["Send"].state_machine_arn,
             },
         )
         for table in (storage.jobs, storage.rows, storage.config_table):
@@ -123,7 +124,7 @@ class ApiStack(Stack):
         grant_audit_append(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
         storage.key.grant_encrypt_decrypt(self.bff)
         self.parse_task.grant_invoke(self.bff)
-        for name in ("Analyze", "Enrich"):
+        for name in ("Analyze", "Enrich", "Send"):
             workflows.state_machines[name].grant_start_execution(self.bff)
 
         authorizer = authorizers.HttpUserPoolAuthorizer(

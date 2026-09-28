@@ -156,3 +156,31 @@ ENRICHMENT_FAILED = (
     "again. If it keeps happening, contact Marketing Tech Ops."
 )
 ENRICHMENT_NOT_READY = "This upload hasn't been enriched yet."
+
+# --- Gate and send (SPEC §16, §17) ---
+GATE_BLOCKING = "{n} {rows} still {have} an issue to fix: {what}."
+GATE_ENRICHMENT_UNDECIDED = (
+    "{n} enrichment {matches} {are} waiting for Apply or Skip on the Enrichment screen."
+)
+GATE_MISSING_FIELD = "{n} {rows} {are} missing {field}."
+GATE_STALE_CAMPAIGNS = (
+    "Campaigns were last checked in Salesforce more than 24 hours ago. Re-check them before "
+    "you send."
+)
+GATE_NOT_ANALYZED = "This file hasn't been analyzed yet."
+GATE_ENRICHMENT_NOT_RUN = "Enrichment is turned on for this upload but hasn't run yet."
+GATE_NO_ROWS = "There are no rows to send. Every row is excluded."
+SEND_SUMMARY_CHANGED = (
+    "The rows changed since you reviewed them. Check the summary again, then send."
+)
+SEND_GATE_FAILED = "This upload can't be sent yet. Fix the items listed, then try again."
+SEND_NO_FAILED_ROWS = "There are no failed rows to retry."
+SEND_UNCONFIRMED = (
+    "Workato didn't answer for this row, so it may or may not have reached Eloqua. It won't be "
+    "retried automatically; ask Marketing Tech Ops to check."
+)
+SEND_FAILED = (
+    "Something went wrong while sending. Rows already submitted stay submitted; ask Marketing "
+    "Tech Ops before retrying."
+)
+RESULT = "{n} leads submitted to Eloqua for {campaigns} on {datetime}."

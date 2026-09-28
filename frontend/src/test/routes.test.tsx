@@ -20,7 +20,7 @@ describe("every route renders with mock data", () => {
     [job("analysis"), "Analyze and fix", "Demo Conference 2026"],
     [job("enrichment"), "Enrichment results", "Enrichment hasn't run yet."],
     [job("send"), "Review and send", "You can't send yet"],
-    [job("result"), "Result", "3 leads submitted to Eloqua"],
+    ["/jobs/j_01JDEMO0000000000000000001/result", "Result", "40 leads submitted to Eloqua"],
     ["/history", "Upload history", "demo_event_list.xlsx"],
     ["/admin", "Admin", "Marketing: Webinar"],
   ])("%s", async (path, heading, content) => {

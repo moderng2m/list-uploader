@@ -1,6 +1,6 @@
 """Step Functions for analyze / enrich / send (SPEC §5.2).
 
-AnalyzeWorkflow (P3) and EnrichWorkflow (P4) are real; Send is a placeholder until P5.
+AnalyzeWorkflow (P3), EnrichWorkflow (P4) and SendWorkflow (P5).
 """
 
 from __future__ import annotations
@@ -37,22 +37,13 @@ class WorkflowsStack(Stack):
         )
         storage.config_table.grant_read_data(self.analyze_task)
         self.enrich_task = self._task_function(cfg, storage, "EnrichTask", "tasks.enrich.handler")
+        self.send_task = self._task_function(cfg, storage, "SendTask", "tasks.send.handler")
 
         self.state_machines: dict[str, sfn.StateMachine] = {
             "Analyze": self._analyze_machine(cfg),
             "Enrich": self._enrich_machine(cfg),
+            "Send": self._send_machine(cfg),
         }
-        for name in ("Send",):
-            self.state_machines[name] = sfn.StateMachine(
-                self,
-                f"{name}Workflow",
-                state_machine_name=f"list-uploader-{cfg.name}-{name.lower()}",
-                definition_body=sfn.DefinitionBody.from_chainable(
-                    sfn.Pass(self, f"{name}NotImplemented", comment="Implemented in a later phase")
-                ),
-                tracing_enabled=True,
-                logs=self._log_options(name),
-            )
 
     def _task_function(
         self, cfg: EnvConfig, storage: StorageStack, cid: str, handler: str
@@ -75,6 +66,7 @@ class WorkflowsStack(Stack):
                 "ROWS_TABLE": storage.rows.table_name,
                 "CONFIG_TABLE": storage.config_table.table_name,
                 "AUDIT_TABLE": storage.audit_events.table_name,
+                "SEND_TO_PROD": "true" if cfg.send_to_prod else "false",
                 "POWERTOOLS_SERVICE_NAME": "list-uploader",
                 "POWERTOOLS_METRICS_NAMESPACE": "ListUploader",
             },
@@ -202,4 +194,46 @@ class WorkflowsStack(Stack):
             timeout=Duration.hours(1),
             tracing_enabled=True,
             logs=self._log_options("Enrich"),
+        )
+
+    def _send_machine(self, cfg: EnvConfig) -> sfn.StateMachine:
+        """Prepare (server-side gate) -> Map of 25-row batches -> Finalize.
+
+        Retrying a batch is safe: each row is claimed with a conditional write before
+        its post, so a row is never posted twice (SPEC §16.3).
+        """
+        fn = self.send_task
+        fail_step = self._step(
+            "SendMarkFailed", "fail", fn, error=sfn.JsonPath.object_at("$.error")
+        )
+        fail_step.next(sfn.Fail(self, "SendFailed"))
+        prepare = self._step(
+            "SendPrepare", "prepare", fn, only_failed=sfn.JsonPath.string_at("$.only_failed")
+        )
+        prepare.add_catch(fail_step, result_path="$.error")
+        batches = sfn.Map(
+            self,
+            "SendBatches",
+            items_path="$.batches",
+            max_concurrency=cfg.send_max_concurrency,
+            item_selector={
+                "job_id": sfn.JsonPath.string_at("$.job_id"),
+                "row_ids": sfn.JsonPath.list_at("$$.Map.Item.Value"),
+            },
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        batches.item_processor(
+            self._step("SendBatch", "send_batch", fn, row_ids=sfn.JsonPath.list_at("$.row_ids"))
+        )
+        batches.add_catch(fail_step, result_path="$.error")
+        finalize = self._step("SendFinalize", "finalize", fn)
+        finalize.add_catch(fail_step, result_path="$.error")
+        return sfn.StateMachine(
+            self,
+            "SendWorkflow",
+            state_machine_name=f"list-uploader-{cfg.name}-send",
+            definition_body=sfn.DefinitionBody.from_chainable(prepare.next(batches).next(finalize)),
+            timeout=Duration.hours(2),
+            tracing_enabled=True,
+            logs=self._log_options("Send"),
         )

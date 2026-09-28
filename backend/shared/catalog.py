@@ -116,20 +116,18 @@ def normalize_header(text: str) -> str:
     return _SPACE.sub(" ", text).strip()
 
 
-# Fields with no confirmed Post to Eloqua destination (SPEC §8 "confirm (OQ-1)").
-# Until OQ-1 is resolved they stay in the processed file but are not sent, and
-# rows with a value get a NOT_SENT_FIELD info issue.
-NOT_SENT_KEYS: frozenset[str] = frozenset(
-    {
-        "mobile_phone",
-        "notes",
-        "zi_contact_id",
-        "zi_company_id",
-        "naics_code",
-        "industry",
-        "website",
-        "employee_count",
-        "list_name",
-        "last_response_class",
-    }
-)
+# Post to Eloqua callable parameter names that are confirmed (SPEC §8 "Callable
+# param" column). OQ-1 interim rule: only these are sent; every other field stays in
+# the processed file and is listed as "not sent" on Review & Send, and rows with a
+# value get a NOT_SENT_FIELD info issue. Answering OQ-1 = adding entries here.
+CALLABLE_PARAMS: dict[str, str] = {
+    "first_name": "first_name",
+    "email": "email",
+    "lead_source": "lead_source",
+    "campaign_id": "campaign_id",
+    "postal_code": "zipPostal",
+    "campaign_status": "campaign_status",
+    "campaign_name": "campaign_name",
+    "linkedin_url": "linkedin_url",
+}
+NOT_SENT_KEYS: frozenset[str] = frozenset(f.key for f in FIELDS if f.key not in CALLABLE_PARAMS)

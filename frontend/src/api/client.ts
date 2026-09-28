@@ -13,6 +13,7 @@ import type {
   LeadSource,
   Mapping,
   Me,
+  SendConfirmation,
   SendResult,
 } from "./types";
 
@@ -81,7 +82,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getGate: (id: string) => request<GateResult>(`/jobs/${id}/gate`),
+  revalidateCampaigns: (id: string) =>
+    request<{ campaigns: number; rows_changed: number[] }>(`/jobs/${id}/revalidate-campaigns`, { method: "POST" }),
+  send: (id: string, confirmation: SendConfirmation, uiGatePassed: boolean) =>
+    request<{ job_id: string; state: string }>(`/jobs/${id}/send`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation, ui_gate_passed: uiGatePassed }),
+    }),
+  retryFailed: (id: string) =>
+    request<{ job_id: string; state: string; row_ids: number[] }>(`/jobs/${id}/retry-failed`, { method: "POST" }),
   getResult: (id: string) => request<SendResult>(`/jobs/${id}/result`),
+  download: (id: string) => request<{ url: string; filename: string; expires_in: number }>(`/jobs/${id}/download`),
   leadSources: () => request<LeadSource[]>("/admin/lead-sources"),
   adminConfig: () => request<AdminConfig>("/admin/config"),
 };

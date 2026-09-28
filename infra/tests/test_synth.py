@@ -254,3 +254,45 @@ def test_enrich_workflow_shape(stacks: dict[str, Stack]) -> None:
             }
         },
     )
+
+
+def test_send_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    send = next(m for lid, m in machines.items() if lid.startswith("SendWorkflow"))
+    definition = json.dumps(send["Properties"]["DefinitionString"])
+    for state in ("SendPrepare", "SendBatches", "SendFinalize", "SendMarkFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":5' in definition
+    assert "only_failed" in definition
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Handler": "tasks.send.handler",
+            "Environment": {
+                "Variables": Match.object_like({"SEND_TO_PROD": "false", "INTEGRATIONS": "fake"})
+            },
+        },
+    )
+    api = Template.from_stack(stacks["api"])
+    api.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like({"SEND_STATE_MACHINE": Match.any_value()})
+            }
+        },
+    )
+
+
+def test_send_to_prod_is_refused_outside_prod() -> None:
+    from infra.config import EnvConfig
+
+    with pytest.raises(ValueError, match="send_to_prod"):
+        EnvConfig(
+            name="dev",
+            region="us-east-1",
+            send_to_prod=True,
+            integrations="fake",
+            bedrock_model_id="x",
+        )

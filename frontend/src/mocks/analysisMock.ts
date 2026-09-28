@@ -105,3 +105,8 @@ export function mockBulk(action: BulkAction, params: Record<string, unknown>) {
   });
   return { action, affected_row_ids: affected, summary: summary() };
 }
+
+/** Every row as it stands now (the send mock reads and updates send status). */
+export function allRows(): Row[] {
+  return rows;
+}

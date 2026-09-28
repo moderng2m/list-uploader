@@ -6,7 +6,13 @@ from typing import Any
 
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
-from bff import analysis_api, enrichment_api, jobs_api, mapping_api  # noqa: F401
+from bff import (  # noqa: F401  (registers routes)
+    analysis_api,
+    enrichment_api,
+    jobs_api,
+    mapping_api,
+    send_api,
+)
 from bff.app import app, current_user, require_admin
 from shared import config_defaults
 from shared.observability import logger, metrics, tracer

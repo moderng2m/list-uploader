@@ -45,13 +45,15 @@ backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
     fake_sfdc.py         synthetic Salesforce campaigns for the fake Workato
     enrichment.py        EnrichmentProvider protocol, ZoomInfoProvider, eligibility
     fake_zoominfo.py     synthetic ZoomInfo answers for the fake Workato
+    sending.py           pre-send gate (SPEC §17) and Post to Eloqua payload (§16.2)
+    processed_file.py    downloadable processed CSV (§7.4), formula-injection safe
     jobs.py              JobState machine; JobRepo (state change + audit in one txn)
     rows.py              Rows table access
     messages.py          all user-facing text (SPEC §20)
     config_defaults.py   thresholds and limits (SPEC §14.4)
     lead_normalizer/     normalizer v5 goes here unmodified (P3)
   bff/                   API Gateway router (Powertools APIGatewayHttpResolver)
-  tasks/                 async task Lambdas (parse_file; analyze, enrich = workflow steps)
+  tasks/                 async task Lambdas (parse_file; analyze, enrich, send = workflow steps)
   audit_archiver/        AuditEvents stream -> Firehose -> S3 archive
   tests/                 pytest + moto
     fixtures/synthetic/  generated sample files (make fixtures); never real data
@@ -197,6 +199,43 @@ Decisions made while building P4:
 - `selected_candidate_json`'s key names aren't documented; the parser accepts
   zi_best_x, snake_case and camelCase. Confirm against a real sample response.
 
+## Gate and send (P5)
+
+`evaluate_gate` (shared/sending.py) runs on the server three times: `GET /gate`
+(Review & Send loads), `POST /send`, and SendPrepare in the workflow. Each writes
+GATE_EVALUATED with `where` = ui / server / workflow. `POST /send` takes the
+confirmation the user saw (`rows_to_send` + rows per campaign and status) and
+refuses with 409 if it no longer matches. It then moves review -> READY_TO_SEND ->
+SENDING (SEND_CONFIRMED), so a second click gets 409 and only one workflow starts.
+
+SendWorkflow: SendPrepare (gate again; 25-row batches) -> Map SendBatches
+(`send_max_concurrency`, 5) -> SendFinalize (COMPLETED or COMPLETED_WITH_ERRORS).
+Per row: build payload -> `assert_send_to_prod_allowed` -> conditional claim
+(`send.status` not_sent/failed -> sending) -> post -> ROW_SUBMITTED or
+ROW_SEND_FAILED written in one transaction with the row's send result. The claim
+makes a retried batch or a second execution skip rows already taken.
+`tasks.send.run_all` mirrors the state machine.
+
+`POST /retry-failed` (COMPLETED_WITH_ERRORS, or FAILED at the send stage) re-sends
+only `failed` rows. `GET /result` lists submitted, failed and unconfirmed rows.
+`GET /download` writes PROCESSED_FILE_DOWNLOADED, then puts the CSV in the
+processed bucket and returns a 5-minute presigned GET.
+
+Decisions made while building P5:
+- **OQ-1 interim rule, taken literally:** only fields with a confirmed callable
+  parameter (`catalog.CALLABLE_PARAMS`) go in the payload. Company, Last Name and
+  List Name are therefore NOT sent until OQ-1 is answered, although the gate still
+  requires them. The Send screen lists sent and not-sent fields.
+- No answer from Post to Eloqua (timeout, connection error): the row stays
+  `sending` with ROW_SEND_FAILED outcome `no_response`, shows as "not confirmed",
+  and is never retried automatically (it may have landed).
+- A retry doesn't re-run the gate: the rows already passed it and were confirmed.
+- Map items carry 25 rows (not one) to keep 5,000-row jobs well under the Step
+  Functions history limit; 5 items in flight = 5 concurrent posts.
+- `EnvConfig` refuses `send_to_prod=True` outside `prod` at synth time.
+- Processed-file cells starting with `=`, `@`, tab, CR, or a non-numeric `+`/`-`
+  get a leading apostrophe (CSV formula injection).
+
 ## Phase status
 
 - P0 scaffold: done.
@@ -204,4 +243,5 @@ Decisions made while building P4:
 - P2 column mapping: done.
 - P3 analysis: done except the golden-output test (needs normalizer v5).
 - P4 enrichment: done (fake ZoomInfo).
-- Next: P5 (gate and send).
+- P5 gate and send: done (fake Post to Eloqua).
+- Next: P6 (history, admin, audit).

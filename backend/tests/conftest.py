@@ -20,6 +20,7 @@ CONFIG_TABLE = "Config-test"
 JOBS_TABLE = "Jobs-test"
 ROWS_TABLE = "Rows-test"
 UPLOADS_BUCKET = "uploads-test"
+PROCESSED_BUCKET = "processed-test"
 
 
 @pytest.fixture
@@ -83,7 +84,9 @@ def config_table(aws: None) -> Any:
 
 @pytest.fixture
 def uploads_bucket(aws: None) -> str:
-    boto3.client("s3").create_bucket(Bucket=UPLOADS_BUCKET, ObjectLockEnabledForBucket=True)
+    s3 = boto3.client("s3")
+    s3.create_bucket(Bucket=UPLOADS_BUCKET, ObjectLockEnabledForBucket=True)
+    s3.create_bucket(Bucket=PROCESSED_BUCKET)
     return UPLOADS_BUCKET
 
 
@@ -104,6 +107,7 @@ class Env:
     parse_requests: list[str] = field(default_factory=list)
     analysis_requests: list[str] = field(default_factory=list)
     enrichment_requests: list[str] = field(default_factory=list)
+    send_requests: list[tuple[str, bool]] = field(default_factory=list)
 
     def bff_deps(self, **overrides: Any) -> Any:
         from bff.app import BffDeps
@@ -117,6 +121,10 @@ class Env:
             "start_parse": self.parse_requests.append,
             "start_analysis": self.analysis_requests.append,
             "start_enrichment": self.enrichment_requests.append,
+            "start_send": lambda job_id, only_failed: self.send_requests.append(
+                (job_id, only_failed)
+            ),
+            "processed_bucket": PROCESSED_BUCKET,
             "config": self.config,
             "workato": self.workato,
             **overrides,
@@ -148,6 +156,19 @@ class Env:
             **overrides,
         }
         return EnrichDeps(**kwargs)
+
+    def send_deps(self, **overrides: Any) -> Any:
+        from tasks.send import SendDeps
+
+        kwargs: dict[str, Any] = {
+            "jobs": self.jobs,
+            "rows": self.rows,
+            "workato": self.workato,
+            "env": "dev",
+            "send_to_prod": False,
+            **overrides,
+        }
+        return SendDeps(**kwargs)
 
     def parse_deps(self, **overrides: Any) -> Any:
         from tasks.parse_file import ParseDeps

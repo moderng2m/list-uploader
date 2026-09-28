@@ -4,7 +4,6 @@ import type {
   CatalogField,
   Analysis,
   Enrichment,
-  GateResult,
   Job,
   LeadSource,
   Issue,
@@ -12,7 +11,6 @@ import type {
   Me,
   ParseSummary,
   Row,
-  SendResult,
 } from "../api/types";
 
 export const DEMO_JOB_ID = "j_01JDEMO0000000000000000000";
@@ -282,24 +280,6 @@ export const enrichment: Enrichment = {
     { row_id: 3, field: "City", before: "", after: "Palo Alto" },
   ],
   notes: [],
-};
-
-export const gate: GateResult = {
-  passed: false,
-  reasons: ["1 row has a campaign ID that wasn't found in Salesforce.", "1 enrichment match is waiting for Apply or Skip."],
-  by_campaign: [
-    { campaign_id: CAMPAIGN_A, campaign_name: "Demo Conference 2026", status: "Attended", rows: 3 },
-    { campaign_id: CAMPAIGN_A, campaign_name: "Demo Conference 2026", status: "Registered", rows: 1 },
-  ],
-  not_sent_fields: ["Mobile Phone", "NAICS Code", "Notes additional Information"],
-};
-
-export const result: SendResult = {
-  submitted: 3,
-  failed: [{ row_id: 7, email: "linus@example.com", reason: "HTTP 500 from Workato (mock)" }],
-  campaigns: [{ name: "Demo Conference 2026", rows: 3 }],
-  submitted_at: "2026-09-28T19:05:00Z",
-  submitted_by: me.email,
 };
 
 export const leadSources: LeadSource[] = [

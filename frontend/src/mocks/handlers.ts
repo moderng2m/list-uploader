@@ -1,9 +1,10 @@
 import { http, HttpResponse } from "msw";
 import { API_BASE } from "../api/client";
-import type { BulkAction, EnrichmentDecision, Job, JobState, RowChange } from "../api/types";
+import type { BulkAction, EnrichmentDecision, Job, JobState, RowChange, SendConfirmation } from "../api/types";
 import { mockAnalysis, mockBulk, mockEdit, mockRows, resetAnalysisMock } from "./analysisMock";
 import { mockDecide, mockEnrichment, resetEnrichmentMock } from "./enrichmentMock";
 import * as f from "./fixtures";
+import { finishSend, mockDownload, mockGate, mockResult, mockRetry, mockSend, resetSendMock } from "./sendMock";
 
 const u = (path: string) => `${API_BASE}${path}`;
 export const MOCK_UPLOAD_URL = "https://uploads.mock.invalid/";
@@ -15,10 +16,14 @@ let counter = 0;
 
 // Jobs with a workflow running in this session (it finishes on the next poll).
 const running = new Map<string, JobState>();
-const DONE: Partial<Record<JobState, JobState>> = {
-  ANALYZING: "ANALYSIS_REVIEW",
-  ENRICHING: "ENRICHMENT_REVIEW",
+const DONE: Partial<Record<JobState, () => JobState>> = {
+  ANALYZING: () => "ANALYSIS_REVIEW",
+  ENRICHING: () => "ENRICHMENT_REVIEW",
+  SENDING: finishSend,
 };
+
+// State changes to the fixture jobs (sent, retried) made during this session.
+const moved = new Map<string, JobState>();
 
 export function resetMockJobs() {
   created.clear();
@@ -26,18 +31,24 @@ export function resetMockJobs() {
   counter = 0;
   resetAnalysisMock();
   resetEnrichmentMock();
+  resetSendMock();
+  moved.clear();
 }
 
 function findJob(id: string): Job | undefined {
-  return created.get(id) ?? f.jobs.find((j) => j.job_id === id);
+  const job = created.get(id) ?? f.jobs.find((j) => j.job_id === id);
+  if (!job) return undefined;
+  const state = running.get(id) ?? moved.get(id);
+  return state ? { ...job, state } : job;
 }
 
 /** Simulate async work (parse, analysis) finishing the first time the job is polled. */
 function advance(job: Job): Job {
-  const finished = DONE[job.state];
-  if (finished) {
-    const done: Job = { ...job, state: finished, summary: mockAnalysis().summary };
+  const finish = DONE[job.state];
+  if (finish && running.has(job.job_id)) {
+    const done: Job = { ...job, state: finish(), summary: mockAnalysis().summary };
     if (created.has(job.job_id)) created.set(job.job_id, done);
+    else moved.set(job.job_id, done.state);
     running.delete(job.job_id);
     return done;
   }
@@ -55,6 +66,11 @@ function advance(job: Job): Job {
     : { ...job, state: "MAPPING_REVIEW", parse: f.demoParse };
   created.set(job.job_id, next);
   return next;
+}
+
+function withJob(id: unknown, respond: (job: Job) => Response) {
+  const job = findJob(String(id));
+  return job ? respond(job) : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
 }
 
 function start(id: string, state: JobState) {
@@ -98,8 +114,7 @@ export const handlers = [
   }),
   http.get(u("/jobs/:id"), ({ params }) => {
     const id = String(params.id);
-    const found = findJob(id);
-    const job = found && running.has(id) ? { ...found, state: running.get(id)! } : found;
+    const job = findJob(id);
     return job
       ? HttpResponse.json(advance(job))
       : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
@@ -136,8 +151,29 @@ export const handlers = [
     };
     return HttpResponse.json(mockDecide(body));
   }),
-  http.get(u("/jobs/:id/gate"), () => HttpResponse.json(f.gate)),
-  http.get(u("/jobs/:id/result"), () => HttpResponse.json(f.result)),
+  http.get(u("/jobs/:id/gate"), ({ params }) => withJob(params.id, (job) => HttpResponse.json(mockGate(job)))),
+  http.post(u("/jobs/:id/revalidate-campaigns"), () =>
+    HttpResponse.json({ campaigns: mockAnalysis().campaigns.length, rows_changed: [] }),
+  ),
+  http.post(u("/jobs/:id/send"), async ({ params, request }) => {
+    const body = (await request.json()) as { confirmation: SendConfirmation };
+    return withJob(params.id, (job) => {
+      const error = mockSend(job, body.confirmation);
+      return error ? HttpResponse.json({ message: error }, { status: 409 }) : start(job.job_id, "SENDING");
+    });
+  }),
+  http.post(u("/jobs/:id/retry-failed"), ({ params }) =>
+    withJob(params.id, (job) => {
+      if (job.state !== "COMPLETED_WITH_ERRORS")
+        return HttpResponse.json({ message: "There are no failed rows to retry." }, { status: 409 });
+      const rowIds = mockRetry();
+      if (!rowIds.length) return HttpResponse.json({ message: "There are no failed rows to retry." }, { status: 409 });
+      start(job.job_id, "SENDING");
+      return HttpResponse.json({ job_id: job.job_id, state: "SENDING", row_ids: rowIds }, { status: 202 });
+    }),
+  ),
+  http.get(u("/jobs/:id/result"), ({ params }) => withJob(params.id, (job) => HttpResponse.json(mockResult(job)))),
+  http.get(u("/jobs/:id/download"), ({ params }) => withJob(params.id, (job) => HttpResponse.json(mockDownload(job)))),
   http.get(u("/admin/lead-sources"), () => HttpResponse.json(f.leadSources)),
   http.get(u("/admin/config"), () => HttpResponse.json(f.adminConfig)),
 ];

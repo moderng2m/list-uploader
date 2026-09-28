@@ -121,6 +121,7 @@ def row_view(row: Mapping[str, Any], mapping: Mapping[str, str]) -> dict[str, An
         "issues": row.get("issues", []),
         "user_edits": row.get("user_edits", []),
         "dismissed": row.get("dismissed", []),
+        "send": row.get("send") or {"status": "not_sent"},
     }
 
 
@@ -279,7 +280,12 @@ def _without_duplicates(issues: Sequence[Mapping[str, Any]]) -> list[Issue]:
 
 
 def apply_changes(
-    job: dict[str, Any], changes: Mapping[int, RowChange], user: User
+    job: dict[str, Any],
+    changes: Mapping[int, RowChange],
+    user: User,
+    *,
+    reevaluate_all: bool = False,
+    system_reason: str = "duplicate_recheck",
 ) -> dict[int, dict[str, Any]]:
     """Apply edits to rows, re-validate, re-check duplicates, and write each changed row
     together with its audit events. Returns the updated rows by ID."""
@@ -325,6 +331,8 @@ def apply_changes(
             new["dismissed"] = sorted(dismissed - set(change.restore))
             updated[rid] = new
             evaluations[rid] = evaluate_row(new, ctx)
+        elif reevaluate_all:
+            evaluations[rid] = evaluate_row(row, ctx)
         else:
             # Unchanged rows keep their stored evaluation; only duplicates are rechecked.
             issues = _without_duplicates(row.get("issues", []))
@@ -345,6 +353,10 @@ def apply_changes(
         changed = rid in changes or [i["code"] for i in before.get("issues", [])] != [
             i.code for i in ev.issues
         ]
+        if reevaluate_all and not changed:
+            changed = (before.get("processed") or {}) != ev.processed or before.get(
+                "status"
+            ) != ev.status
         if not changed:
             continue
         events: list[AuditEvent] = []
@@ -416,7 +428,7 @@ def apply_changes(
                 before,
                 ev,
                 user.actor() if rid in changes else Actor.system(),
-                reason=change.reason if rid in changes else "duplicate_recheck",
+                reason=change.reason if rid in changes else system_reason,
                 correlation_id=correlation_id(),
             )
         )

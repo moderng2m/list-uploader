@@ -40,10 +40,13 @@ class BffDeps:
     rows: RowRepo
     start_analysis: Callable[[str], None]
     start_enrichment: Callable[[str], None]
+    start_send: Callable[[str, bool], None]
     config: ConfigStore
     workato: WorkatoClient
     normalizer: Normalizer = field(default_factory=load_normalizer)
     bedrock_model_id: str = "fake-heuristic"
+    processed_bucket: str = ""
+    send_to_prod: bool = False
     raw_file_retention_days: int = 90
     max_bytes: int = config_defaults.LIMITS["max_file_bytes"]
 
@@ -75,12 +78,23 @@ class BffDeps:
 
         start_analysis = starter(analyze_arn)
         start_enrichment = starter(os.environ["ENRICH_STATE_MACHINE"])
+        send_arn = os.environ["SEND_STATE_MACHINE"]
+
+        def start_send(job_id: str, only_failed: bool) -> None:
+            sfn.start_execution(
+                stateMachineArn=send_arn,
+                name=f"{job_id}-{new_ulid()}",
+                input=json.dumps({"job_id": job_id, "only_failed": only_failed}),
+            )
 
         if os.environ.get("INTEGRATIONS", "fake") != "fake":
             raise RuntimeError("only INTEGRATIONS=fake is wired up in this build")
         return cls(
             start_analysis=start_analysis,
             start_enrichment=start_enrichment,
+            start_send=start_send,
+            processed_bucket=os.environ["PROCESSED_BUCKET"],
+            send_to_prod=os.environ.get("SEND_TO_PROD", "false") == "true",
             config=ConfigStore(),
             workato=FakeWorkatoClient(env=os.environ.get("ENV", "dev"), campaigns=dict(CAMPAIGNS)),
             bedrock_model_id=os.environ.get("BEDROCK_MODEL_ID", "fake-heuristic"),

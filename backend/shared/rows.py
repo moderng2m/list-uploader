@@ -86,6 +86,53 @@ class RowRepo:
                 ExpressionAttributeValues={":e": to_dynamo(result)},
             )
 
+    def claim_send(
+        self, job_id: str, row_id: int, *, attempt: int, payload_sha256: str, at: str
+    ) -> bool:
+        """not_sent|failed -> sending (SPEC §16.3). False if another sender got there first
+        or the row was already submitted: the caller must skip it."""
+        try:
+            self._table.update_item(
+                Key={"job_id": job_id, "row_id": row_id},
+                UpdateExpression="SET #send = :claim",
+                ConditionExpression=(
+                    "attribute_not_exists(#send) OR #send.#status IN (:not_sent, :failed)"
+                ),
+                ExpressionAttributeNames={"#send": "send", "#status": "status"},
+                ExpressionAttributeValues={
+                    ":claim": {
+                        "status": "sending",
+                        "attempts": attempt,
+                        "payload_sha256": payload_sha256,
+                        "sending_at": at,
+                    },
+                    ":not_sent": "not_sent",
+                    ":failed": "failed",
+                },
+            )
+        except self._table.meta.client.exceptions.ConditionalCheckFailedException:
+            return False
+        return True
+
+    def send_result_write(
+        self, job_id: str, row_id: int, *, attempt: int, send: dict[str, Any]
+    ) -> dict[str, Any]:
+        """A TransactWriteItems Update recording a send result for the claim `attempt`."""
+        return {
+            "Update": {
+                "TableName": self.table_name,
+                "Key": {"job_id": job_id, "row_id": row_id},
+                "UpdateExpression": "SET #send = :send",
+                "ConditionExpression": "#send.#status = :sending AND #send.attempts = :attempt",
+                "ExpressionAttributeNames": {"#send": "send", "#status": "status"},
+                "ExpressionAttributeValues": {
+                    ":send": send,
+                    ":sending": "sending",
+                    ":attempt": attempt,
+                },
+            }
+        }
+
     def put_all(self, items: Iterable[dict[str, Any]]) -> None:
         with self._table.batch_writer() as batch:
             for item in items:
