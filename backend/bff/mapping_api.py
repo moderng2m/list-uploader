@@ -36,6 +36,16 @@ def _samples(job_id: str, headers: list[str]) -> dict[str, list[str]]:
     return samples
 
 
+def mapping_editable(job: dict[str, Any]) -> bool:
+    """The mapping can change until enrichment (or sending) starts: while the mapping is
+    being reviewed, while the analysis is being reviewed, or after an analysis failed.
+    A change after analysis means the analysis runs again (the page starts it)."""
+    state = job["state"]
+    return state in (JobState.MAPPING_REVIEW, JobState.ANALYSIS_REVIEW) or (
+        state == JobState.FAILED and (job.get("last_error") or {}).get("stage") == "analysis"
+    )
+
+
 def mapping_view(job: dict[str, Any]) -> dict[str, Any]:
     suggestion = job["mapping_suggestion"]
     confirmed = job.get("mapping_confirmed")
@@ -67,7 +77,7 @@ def mapping_view(job: dict[str, Any]) -> dict[str, Any]:
         ],
         "confirmed": confirmed is not None,
         "confirmed_at": confirmed.get("confirmed_at") if confirmed else None,
-        "editable": job["state"] == JobState.MAPPING_REVIEW,
+        "editable": mapping_editable(job),
         "ai_note": messages.MAPPING_AI_UNAVAILABLE if ai.get("degraded") else None,
     }
 
@@ -84,12 +94,12 @@ def get_mapping(job_id: str) -> Any:
 def confirm_mapping(job_id: str) -> Any:
     user = current_user()
     job = load_job_for(user, job_id, "/jobs/{id}/mapping")
-    if job["state"] != JobState.MAPPING_REVIEW or "mapping_suggestion" not in job:
-        return _conflict(
-            messages.MAPPING_NOT_READY
-            if "mapping_suggestion" not in job
-            else messages.MAPPING_LOCKED
-        )
+    if "mapping_suggestion" not in job:
+        return _conflict(messages.MAPPING_NOT_READY)
+    if not mapping_editable(job):
+        return _conflict(messages.MAPPING_LOCKED)
+    state = JobState(job["state"])
+    previous = job.get("mapping_confirmed")
     choices = json_body().get("columns")
     if not isinstance(choices, list) or not all(isinstance(c, dict) for c in choices):
         raise BadRequestError("Send the mapping as a list of columns.")
@@ -118,7 +128,8 @@ def confirm_mapping(job_id: str) -> Any:
         )
         if key != was.get("field_key"):
             changed.append(header)
-        if was.get("method") == Method.AI:
+        # AI suggestions are accepted or rejected once, at the first confirmation.
+        if was.get("method") == Method.AI and previous is None:
             decisions.append(
                 AuditEvent(
                     event_type=(
@@ -135,6 +146,16 @@ def confirm_mapping(job_id: str) -> Any:
                 )
             )
 
+    before = {c["source_header"]: c.get("field_key") for c in (previous or {}).get("columns", [])}
+    changed_vs_previous = [
+        c["source_header"] for c in final if before.get(c["source_header"]) != c["field_key"]
+    ]
+    # Analysis has to (re)run after the first confirmation, after any change, and to
+    # recover from a failed analysis.
+    analysis_needed = previous is None or bool(changed_vs_previous) or state == JobState.FAILED
+    if previous is not None and not changed_vs_previous:
+        return {**mapping_view(job), "analysis_needed": analysis_needed}
+
     confirmed = {
         "columns": final,
         "confirmed_at": now_iso(),
@@ -144,7 +165,7 @@ def confirm_mapping(job_id: str) -> Any:
     }
     deps().jobs.update_in_state(
         job_id,
-        JobState.MAPPING_REVIEW,
+        state,
         set_fields={"mapping_confirmed": confirmed},
         events=[
             *decisions,
@@ -157,6 +178,11 @@ def confirm_mapping(job_id: str) -> Any:
                         {k: c[k] for k in ("source_header", "field_key", "method")} for c in final
                     ],
                     "changed_vs_suggestion": changed,
+                    **(
+                        {"reconfirmed": True, "changed_vs_previous": changed_vs_previous}
+                        if previous is not None
+                        else {}
+                    ),
                 },
                 correlation_id=correlation_id(),
             ),
@@ -166,4 +192,7 @@ def confirm_mapping(job_id: str) -> Any:
     metrics.add_metric(name="AISuggestionsAccepted", unit="Count", value=accepted)
     metrics.add_metric(name="AISuggestionsRejected", unit="Count", value=len(decisions) - accepted)
     metrics.add_metric(name="MappingColumnsChanged", unit="Count", value=len(changed))
-    return mapping_view({**job, "mapping_confirmed": confirmed})
+    return {
+        **mapping_view({**job, "mapping_confirmed": confirmed}),
+        "analysis_needed": analysis_needed,
+    }

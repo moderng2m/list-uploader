@@ -105,6 +105,8 @@ export interface Mapping {
   confirmed_at: string | null;
   editable: boolean;
   ai_note: string | null;
+  /** On save: whether the analysis must (re)run, i.e. first save, a change, or a failed run. */
+  analysis_needed?: boolean;
 }
 
 export interface Issue {

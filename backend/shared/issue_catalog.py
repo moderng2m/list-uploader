@@ -26,7 +26,11 @@ EXPLANATIONS: dict[str, str] = {
     "EXCEL_ERROR_VALUE": "A cell had an Excel error and was left blank.",
     "ZIP_LEADING_ZERO_RESTORED": "A US ZIP code had its leading zero restored.",
     "FIELD_FORMAT_INVALID": "A value wasn't in a usable format and was left blank.",
-    "NOT_SENT_FIELD": "Some fields aren't sent to Eloqua yet (kept in the processed file).",
+    "NOT_SENT_FIELD": (
+        "For your information: when you send in step 4, some fields won't go to Eloqua "
+        "(Post to Eloqua doesn't accept them yet). They stay in your processed file. "
+        "No action needed."
+    ),
     "ENRICHMENT_REVIEW": "An enrichment match needs your decision.",
     "LINKEDIN_MULTIPLE_PROFILES": "ZoomInfo has more than one LinkedIn profile for the person.",
 }

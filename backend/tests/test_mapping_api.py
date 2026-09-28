@@ -183,16 +183,16 @@ class TestConfirm:
         _, view = _get(job_id)
         assert _put(job_id, _as_choices(view), email="someone@example.com")[0] == 403
 
-    def test_locked_after_mapping_review(self, app_env: Env) -> None:
+    def test_locked_once_enrichment_starts(self, app_env: Env) -> None:
         job_id = _uploaded(app_env, "template_filled.xlsx")
         _, view = _get(job_id)
         from shared.audit import Actor
         from shared.jobs import JobState
 
-        app_env.jobs.transition(
-            job_id, JobState.MAPPING_REVIEW, JobState.ANALYZING, actor=Actor.system()
-        )
+        for to in (JobState.ANALYZING, JobState.ANALYSIS_REVIEW, JobState.ENRICHING):
+            state = app_env.jobs.get(job_id)["state"]  # type: ignore[index]
+            app_env.jobs.transition(job_id, JobState(state), to, actor=Actor.system())
         status, body = _put(job_id, _as_choices(view))
         assert status == 409
-        assert "already confirmed" in body["message"]
+        assert "enrichment or sending has started" in body["message"]
         assert _get(job_id)[1]["editable"] is False

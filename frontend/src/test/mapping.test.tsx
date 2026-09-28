@@ -24,7 +24,7 @@ describe("mapping screen", () => {
     expect(ai.closest("td")).toHaveAttribute("title", "Header and values look like job titles.");
     expect(screen.getAllByText("Exact").length).toBe(4);
     expect(screen.getByText("Alias")).toBeInTheDocument();
-    expect(screen.getByText("ada@example.com · grace@example.org · alan@example.net")).toBeInTheDocument();
+    expect(screen.getByText("ada@acme.example · grace@globex.example · alan@initech.example")).toBeInTheDocument();
   });
 
   it("lists fields that will be filled automatically", async () => {
@@ -56,7 +56,7 @@ describe("mapping screen", () => {
     const user = userEvent.setup();
     await confirmButton();
     await user.selectOptions(screen.getByLabelText("Target for Company"), "");
-    const missing = screen.getByRole("list", { name: "Required fields not yet mapped" });
+    const missing = screen.getByRole("list", { name: "Required fields still to map" });
     expect(within(missing).getByText("Company")).toBeInTheDocument();
     expect(await confirmButton()).toBeDisabled();
   });
@@ -99,15 +99,58 @@ describe("mapping screen", () => {
     expect(await screen.findByText(/Automatic suggestions weren't available/)).toHaveAttribute("role", "note");
   });
 
-  it("is read-only once analysis has started", async () => {
+  it("is read-only once enrichment or sending has started", async () => {
     server.use(
       http.get("/api/jobs/:id/mapping", () =>
         HttpResponse.json({ ...mapping, editable: false, confirmed: true }),
       ),
     );
     renderMapping();
-    expect(await screen.findByText("This mapping is confirmed and can no longer be changed.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("The mapping can't be changed once enrichment or sending has started."),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Target for Company")).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Confirm mapping/ })).toBeNull();
+  });
+
+  it("after analysis: going back without changes doesn't save or re-run", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.get("/api/jobs/:id/mapping", () => HttpResponse.json({ ...mapping, confirmed: true })),
+      http.put("/api/jobs/:id/mapping", () => {
+        calls.push("save");
+        return undefined;
+      }),
+      http.post("/api/jobs/:id/analyze", () => {
+        calls.push("analyze");
+        return undefined;
+      }),
+    );
+    const router = renderMapping();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Back to analysis" }));
+    expect(router.state.location.pathname).toBe(`/jobs/${DEMO_JOB_ID}/analysis`);
+    expect(calls).toEqual([]);
+  });
+
+  it("after analysis: a change saves the mapping and re-runs the analysis", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.get("/api/jobs/:id/mapping", () => HttpResponse.json({ ...mapping, confirmed: true })),
+      http.put("/api/jobs/:id/mapping", () => {
+        calls.push("save");
+        return undefined;
+      }),
+      http.post("/api/jobs/:id/analyze", () => {
+        calls.push("analyze");
+        return undefined;
+      }),
+    );
+    renderMapping();
+    const user = userEvent.setup();
+    expect(await screen.findByText(/Changing it re-runs the analysis/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Target for Badge Color"), "notes");
+    await user.click(screen.getByRole("button", { name: "Save mapping and re-run analysis" }));
+    await screen.findByRole("heading", { level: 1, name: "Analyze and fix" });
+    expect(calls).toEqual(["save", "analyze"]);
   });
 });

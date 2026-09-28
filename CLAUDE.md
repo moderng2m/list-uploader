@@ -142,6 +142,13 @@ one-to-one, must-map fields present) and records MAPPING_CONFIRMED plus
 SUGGESTION_ACCEPTED/REJECTED per AI column. The job stays in MAPPING_REVIEW;
 `POST /analyze` (P3) moves it on.
 
+The mapping stays editable until enrichment or sending starts (MAPPING_REVIEW,
+ANALYSIS_REVIEW, or FAILED at the analysis stage). A later save that changes
+something writes MAPPING_CONFIRMED with `changed_vs_previous` (AI suggestions are
+decided only at the first confirmation) and returns `analysis_needed`; the page
+then re-runs the analysis, which keeps row edits. Saving an unchanged mapping
+writes nothing.
+
 Must-map fields: company, first_name, last_name, email, campaign_id. Required
 fields that may stay unmapped (`fill_when_unmapped`): lead_source, campaign_status,
 list_name, campaign_name. Including list_name and campaign_status goes beyond

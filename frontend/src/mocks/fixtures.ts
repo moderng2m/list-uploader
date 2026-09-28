@@ -119,7 +119,7 @@ export const mapping: Mapping = {
     { source_header: "Company", samples: ["Acme Demo Co", "Globex Test Inc", "Initech Sample"], field_key: "company", method: "exact", confidence: null },
     { source_header: "First name", samples: ["Ada", "Grace", "Alan"], field_key: "first_name", method: "exact", confidence: null },
     { source_header: "Last Name", samples: ["Example", "Sample", "Placeholder"], field_key: "last_name", method: "exact", confidence: null },
-    { source_header: "E-mail", samples: ["ada@example.com", "grace@example.org", "alan@example.net"], field_key: "email", method: "alias", confidence: null },
+    { source_header: "E-mail", samples: ["ada@acme.example", "grace@globex.example", "alan@initech.example"], field_key: "email", method: "alias", confidence: null },
     { source_header: "Job Position", samples: ["VP Marketing", "Director, Ops", "CFO"], field_key: "title", method: "ai", confidence: 0.87, reason: "Header and values look like job titles." },
     { source_header: "SFDC Last Campaign ID", samples: [CAMPAIGN_A, CAMPAIGN_B, CAMPAIGN_A], field_key: "campaign_id", method: "exact", confidence: null },
     { source_header: "Badge Color", samples: ["blue", "red", "blue"], field_key: null, method: "none", confidence: null },

@@ -362,3 +362,63 @@ class TestLifecycle:
         assert run_all(job_id, app_env.analyze_deps()) == "ANALYSIS_REVIEW"
         job = app_env.jobs.get(job_id)
         assert job is not None and "last_error" not in job
+
+
+class TestRemapAfterAnalysis:
+    """The mapping stays editable until enrichment starts; a change re-runs analysis."""
+
+    def _mapping(self, job_id: str) -> dict[str, Any]:
+        return call(http_event("GET", f"/jobs/{job_id}/mapping", email=OWNER))[1]  # type: ignore[no-any-return]
+
+    def _put(self, job_id: str, columns: list[dict[str, Any]]) -> tuple[int, Any]:
+        body = {"columns": columns}
+        return call(http_event("PUT", f"/jobs/{job_id}/mapping", email=OWNER, body=body))
+
+    def test_change_saves_and_rerun_uses_it_keeping_edits(self, app_env: Env) -> None:
+        job_id = _analyzed(app_env)
+        _patch(job_id, 3, {"processed": {"campaign_id": EVENTS_ID}})
+        assert _rows(job_id)[2]["processed"].get("phone")
+        view = self._mapping(job_id)
+        assert view["editable"] is True and view["confirmed"] is True
+        columns = [
+            {"source_header": c["source_header"],
+             "field_key": None if c["source_header"] == "Business Phone" else c["field_key"]}
+            for c in view["columns"]
+        ]  # fmt: skip
+        suggestions_before = len(_events(app_env, job_id, "SUGGESTION_ACCEPTED")) + len(
+            _events(app_env, job_id, "SUGGESTION_REJECTED")
+        )
+        status, saved = self._put(job_id, columns)
+        assert status == 200, saved
+        assert saved["analysis_needed"] is True
+        confirmed = _events(app_env, job_id, "MAPPING_CONFIRMED")
+        assert len(confirmed) == 2
+        assert json.loads(confirmed[-1]["details"])["changed_vs_previous"] == ["Business Phone"]
+        # AI suggestions were decided at the first confirmation, not again.
+        assert suggestions_before == len(_events(app_env, job_id, "SUGGESTION_ACCEPTED")) + len(
+            _events(app_env, job_id, "SUGGESTION_REJECTED")
+        )
+
+        assert call(http_event("POST", f"/jobs/{job_id}/analyze", email=OWNER))[0] == 202
+        app_env.bedrock.queue(LEAD_SOURCE_AI, JUNK_AI)
+        run_all(job_id, app_env.analyze_deps())
+        rows = _rows(job_id)
+        assert "phone" not in rows[2]["processed"]
+        assert rows[3]["processed"]["campaign_id"] == EVENTS_ID  # the user's edit survives
+
+    def test_saving_the_same_mapping_changes_nothing(self, app_env: Env) -> None:
+        job_id = _analyzed(app_env)
+        view = self._mapping(job_id)
+        columns = [{"source_header": c["source_header"], "field_key": c["field_key"]}
+                   for c in view["columns"]]  # fmt: skip
+        status, saved = self._put(job_id, columns)
+        assert status == 200
+        assert saved["analysis_needed"] is False
+        assert len(_events(app_env, job_id, "MAPPING_CONFIRMED")) == 1
+
+    def test_locked_during_analysis(self, app_env: Env) -> None:
+        job_id = _analyzed(app_env)
+        columns = [{"source_header": c["source_header"], "field_key": c["field_key"]}
+                   for c in self._mapping(job_id)["columns"]]  # fmt: skip
+        assert call(http_event("POST", f"/jobs/{job_id}/analyze", email=OWNER))[0] == 202
+        assert self._put(job_id, columns)[0] == 409

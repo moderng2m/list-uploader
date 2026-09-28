@@ -153,7 +153,18 @@ export const handlers = [
         { message: `Map these required fields before you continue: ${missing.join(", ")}.` },
         { status: 400 },
       );
-    return HttpResponse.json({ ...f.mapping, confirmed: true, confirmed_at: new Date().toISOString() });
+    return HttpResponse.json({
+      ...f.mapping,
+      columns: f.mapping.columns.map((c) => {
+        const chosen = body.columns.find((b) => b.source_header === c.source_header);
+        return chosen && chosen.field_key !== c.field_key
+          ? { ...c, field_key: chosen.field_key, method: chosen.field_key ? "manual" : "none", confidence: null }
+          : c;
+      }),
+      confirmed: true,
+      confirmed_at: new Date().toISOString(),
+      analysis_needed: true,
+    });
   }),
   http.post(u("/jobs/:id/analyze"), ({ params }) => start(String(params.id), "ANALYZING")),
   http.post(u("/jobs/:id/enrich"), ({ params }) => start(String(params.id), "ENRICHING")),

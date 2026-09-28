@@ -75,8 +75,8 @@ MAPPING_AI_UNAVAILABLE = (
 )
 MAPPING_NOT_READY = "This file is still being read. Wait a moment and refresh."
 MAPPING_LOCKED = (
-    "The mapping for this upload is already confirmed and analysis has started, so it can't "
-    "be changed."
+    "The mapping can't be changed once enrichment or sending has started. To use a different "
+    "mapping, upload the file again."
 )
 
 # --- Analysis issues (SPEC §9) ---
@@ -117,7 +117,8 @@ ZIP_LEADING_ZERO_RESTORED = (
     "ZIP code '{before}' was padded to '{after}' (Excel drops leading zeros)."
 )
 NOT_SENT_FIELD = (
-    "These fields have values but aren't sent to Eloqua yet (kept in the processed file): {fields}."
+    "When you send in step 4, these fields stay in your processed file but aren't sent to "
+    "Eloqua (Post to Eloqua doesn't accept them yet): {fields}. No action needed."
 )
 AUTO_LIST_NAME = "SFDC List Name was blank, so it was set to '{value}'."
 ANALYSIS_AI_UNAVAILABLE = (

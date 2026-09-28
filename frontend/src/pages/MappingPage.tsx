@@ -34,15 +34,23 @@ function MappingEditor({ jobId, mapping }: { jobId: string; mapping: Mapping }) 
     );
   }
 
+  // Once analysed, a change to the mapping re-runs the analysis; no change just goes back.
+  const changed = columns.some((c) => original.get(c.source_header)?.field_key !== c.field_key);
+  const reanalyze = mapping.confirmed && changed;
+
   async function onContinue() {
     setSaving(true);
     setError(null);
     try {
-      await api.confirmMapping(
+      if (mapping.confirmed && !changed) {
+        navigate(`/jobs/${jobId}/analysis`);
+        return;
+      }
+      const saved = await api.confirmMapping(
         jobId,
         columns.map((c) => ({ source_header: c.source_header, field_key: c.field_key })),
       );
-      await api.startAnalysis(jobId);
+      if (saved.analysis_needed ?? true) await api.startAnalysis(jobId);
       navigate(`/jobs/${jobId}/analysis`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -95,15 +103,18 @@ function MappingEditor({ jobId, mapping }: { jobId: string; mapping: Mapping }) 
         </table>
       </div>
       <aside className="card">
-        <h2>Required fields not yet mapped</h2>
+        <h2>Required fields</h2>
         {missing.length === 0 ? (
-          <p className="ok">All required fields are mapped.</p>
+          <p className="ok">✓ All required fields are mapped.</p>
         ) : (
-          <ul aria-label="Required fields not yet mapped">
-            {missing.map((f) => (
-              <li key={f.key}>{f.label}</li>
-            ))}
-          </ul>
+          <>
+            <p>Map these before you continue:</p>
+            <ul aria-label="Required fields still to map">
+              {missing.map((f) => (
+                <li key={f.key}>{f.label}</li>
+              ))}
+            </ul>
+          </>
         )}
         {autoFilled.length > 0 && (
           <>
@@ -123,16 +134,32 @@ function MappingEditor({ jobId, mapping }: { jobId: string; mapping: Mapping }) 
           </p>
         )}
         {mapping.editable ? (
-          <button
-            type="button"
-            className="primary"
-            disabled={missing.length > 0 || saving}
-            onClick={onContinue}
-          >
-            {saving ? "Saving…" : "Confirm mapping and continue"}
-          </button>
+          <>
+            {mapping.confirmed && (
+              <p className="muted small">
+                You can change the mapping until you start enrichment or send. Changing it re-runs
+                the analysis; edits you made to rows are kept.
+              </p>
+            )}
+            <button
+              type="button"
+              className="primary"
+              disabled={missing.length > 0 || saving}
+              onClick={onContinue}
+            >
+              {saving
+                ? "Saving…"
+                : reanalyze
+                  ? "Save mapping and re-run analysis"
+                  : mapping.confirmed
+                    ? "Back to analysis"
+                    : "Confirm mapping and continue"}
+            </button>
+          </>
         ) : (
-          <p className="muted">This mapping is confirmed and can no longer be changed.</p>
+          <p className="muted">
+            The mapping can't be changed once enrichment or sending has started.
+          </p>
         )}
       </aside>
     </div>
