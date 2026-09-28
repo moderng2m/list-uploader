@@ -10,6 +10,22 @@ app (see "Not covered here").
 
 1. **Tools:** Node 20+, [uv](https://docs.astral.sh/uv/), and AWS credentials for
    the personal account in your shell (`aws sts get-caller-identity` shows it).
+   Use a named profile so an SSO default (possibly a work account) can't be
+   picked up by mistake:
+
+   ```
+   aws configure --profile list-uploader
+   export AWS_PROFILE=list-uploader
+   export AWS_REGION=us-east-1
+   aws sts get-caller-identity
+   ```
+
+   Check the account number before anything else, and repeat the two `export`
+   lines in every new terminal window. Never paste an access key anywhere but
+   `aws configure`; if one leaks, deactivate and delete it in IAM and make a new
+   one. Paste commands one at a time: zsh doesn't treat `#` as a comment at the
+   prompt, so a comment containing an apostrophe opens a quote (`quote>`); press
+   Ctrl+C to get out.
 2. **Install:** `make install`
 3. **Bootstrap CDK once per account and region:**
    `npx -y aws-cdk@2 bootstrap aws://<account-id>/us-east-1`
