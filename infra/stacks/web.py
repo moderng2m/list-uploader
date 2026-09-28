@@ -92,7 +92,6 @@ class WebStack(Stack):
             self,
             "Distribution",
             default_root_object="index.html",
-            minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(self.site_bucket),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -100,4 +99,7 @@ class WebStack(Stack):
             ),
             error_responses=spa_fallback,
         )
+        # A TLS 1.2 minimum needs a custom domain and certificate: CloudFront's default
+        # *.cloudfront.net certificate has a fixed policy. Set one up with the
+        # prod domain (browsers negotiate TLS 1.2+ anyway).
         self.origin = cfg.web_origin or f"https://{self.distribution.distribution_domain_name}"

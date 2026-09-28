@@ -119,12 +119,13 @@ describe("analysis job states", () => {
   const demo = jobs[0]!;
 
   it("shows progress while analyzing, then the results", async () => {
-    let polls = 0;
+    // Stay ANALYZING until the test has seen the progress message; flipping on a
+    // poll count raced the fast test poll interval on a busy machine.
+    let finished = false;
     server.use(
-      http.get("/api/jobs/:id", () => {
-        polls += 1;
-        return HttpResponse.json({ ...demo, state: polls < 2 ? "ANALYZING" : "ANALYSIS_REVIEW" });
-      }),
+      http.get("/api/jobs/:id", () =>
+        HttpResponse.json({ ...demo, state: finished ? "ANALYSIS_REVIEW" : "ANALYZING" }),
+      ),
     );
     const router = createMemoryRouter(
       [{ path: "/jobs/:jobId/analysis", element: <AnalysisPageFast /> }],
@@ -132,6 +133,7 @@ describe("analysis job states", () => {
     );
     render(<RouterProvider router={router} />);
     expect(await screen.findByText("Analyzing your file…")).toBeInTheDocument();
+    finished = true;
     expect(await screen.findByText("CAMPAIGN_NOT_FOUND")).toBeInTheDocument();
   });
 

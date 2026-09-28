@@ -156,7 +156,7 @@ class AuditQueryStack(Stack):
                 ),
             ),
         )
-        table.add_dependency(database)
+        table.add_resource_dependency(database)
         self.table_name = f"{self.database_name}.events"
 
         self.results = s3.Bucket(
@@ -206,7 +206,7 @@ class AuditQueryStack(Stack):
                 query_string=sql,
                 work_group=self.workgroup_name,
             )
-            query.add_dependency(workgroup)
+            query.add_resource_dependency(workgroup)
 
         self.reader = self._reader_role(cfg, suffix, storage, workgroup)
 

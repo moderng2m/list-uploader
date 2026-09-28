@@ -111,7 +111,7 @@ class TestHeaders:
         assert security["StrictTransportSecurity"]["AccessControlMaxAgeSec"] >= 31536000
         assert security["FrameOptions"]["FrameOption"] == "DENY"
 
-    def test_tls12_minimum(self, dev: dict[str, Stack]) -> None:
+    def test_https_only(self, dev: dict[str, Stack]) -> None:
         dist = _only(_t(dev, "web"), "AWS::CloudFront::Distribution")["DistributionConfig"]
         assert dist["DefaultCacheBehavior"]["ViewerProtocolPolicy"] == "redirect-to-https"
 
