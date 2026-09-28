@@ -164,6 +164,10 @@ class TestResults:
         assert groups["VALUE_JUNK"]["bulk_action"] == "exclude_junk"
         assert groups["STATUS_INVALID"]["bulk_action"] == "set_status"
         assert view["issue_groups"][0]["severity"] == "blocking"
+        # Each group's count is rows, exactly what "Show rows" lists; values can be more.
+        for code, g in groups.items():
+            assert g["count"] == len(_rows(job_id, issue_code=code)), code
+            assert g["values"] >= g["count"], code
         campaigns = {c["id"]: c for c in view["campaigns"]}
         assert campaigns[EVENTS_ID]["row_count"] == 4  # rows 2, 5, 6, 8 (row 3 has a bad ID)
         assert campaigns["701000000000009AAA"]["found"] is False

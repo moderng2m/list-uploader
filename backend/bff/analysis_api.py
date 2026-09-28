@@ -143,11 +143,17 @@ def get_analysis(job_id: str) -> Any:
     for r in rows:
         if r.get("excluded"):
             continue
+        # `count` is rows (what "Show rows" lists); `values` is flags, as one row can
+        # have several (e.g. junk in four fields).
+        seen: set[str] = set()
         for i in r.get("issues", []):
             entry = counts.setdefault(
-                i["code"], {"code": i["code"], "severity": i["severity"], "count": 0}
+                i["code"], {"code": i["code"], "severity": i["severity"], "count": 0, "values": 0}
             )
-            entry["count"] += 1
+            entry["values"] += 1
+            if i["code"] not in seen:
+                seen.add(i["code"])
+                entry["count"] += 1
     severity_order = {"blocking": 0, "warning": 1, "info": 2}
     groups = sorted(counts.values(), key=lambda g: (severity_order[g["severity"]], -g["count"]))
     for g in groups:

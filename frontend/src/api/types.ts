@@ -130,7 +130,10 @@ export type BulkAction = "accept_lead_source_suggestions" | "exclude_duplicates"
 export interface IssueGroup {
   code: string;
   severity: Severity;
+  /** Rows with this issue (what "Show rows" lists). */
   count: number;
+  /** Flags in those rows; more than `count` when a row has it in several fields. */
+  values?: number;
   explanation: string;
   bulk_action: BulkAction | null;
   bulk_action_label: string | null;

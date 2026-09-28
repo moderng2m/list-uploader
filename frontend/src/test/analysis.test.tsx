@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { DEMO_JOB_ID, jobs } from "../mocks/fixtures";
+import { analysis, DEMO_JOB_ID, jobs } from "../mocks/fixtures";
 import { routes } from "../routes";
 import { server } from "./setup";
 
@@ -41,6 +41,20 @@ describe("analysis review", () => {
     // Source vs processed side by side.
     expect(within(await screen.findByRole("table")).getByText("was: Events")).toBeInTheDocument();
     expect(screen.getByText(/Enrichment will look up 3 contacts in ZoomInfo/)).toBeInTheDocument();
+  });
+
+  it("counts rows per issue, and values when a row has several", async () => {
+    server.use(
+      http.get("/api/jobs/:id/analysis", () =>
+        HttpResponse.json({
+          ...analysis,
+          issue_groups: [{ ...analysis.issue_groups.find((g) => g.code === "VALUE_JUNK")!, count: 1, values: 4 }],
+        }),
+      ),
+    );
+    renderAnalysis();
+    const group = (await screen.findByText("VALUE_JUNK")).closest("li")!;
+    expect(group).toHaveTextContent("1 row · 4 values");
   });
 
   it("filters rows by issue", async () => {

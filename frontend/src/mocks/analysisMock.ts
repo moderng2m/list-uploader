@@ -32,14 +32,20 @@ function summary() {
 }
 
 export function mockAnalysis() {
-  const counts = new Map<string, number>();
-  for (const r of rows) if (!r.excluded) for (const i of r.issues) counts.set(i.code, (counts.get(i.code) ?? 0) + 1);
+  // Rows per issue (what "Show rows" lists) and flags per issue (a row can have several).
+  const rowCounts = new Map<string, number>();
+  const valueCounts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.excluded) continue;
+    for (const code of new Set(r.issues.map((i) => i.code))) rowCounts.set(code, (rowCounts.get(code) ?? 0) + 1);
+    for (const i of r.issues) valueCounts.set(i.code, (valueCounts.get(i.code) ?? 0) + 1);
+  }
   return {
     ...analysis,
     summary: summary(),
     issue_groups: analysis.issue_groups
-      .filter((g) => counts.has(g.code))
-      .map((g) => ({ ...g, count: counts.get(g.code) ?? 0 })),
+      .filter((g) => rowCounts.has(g.code))
+      .map((g) => ({ ...g, count: rowCounts.get(g.code) ?? 0, values: valueCounts.get(g.code) ?? 0 })),
   };
 }
 

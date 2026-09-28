@@ -221,7 +221,8 @@ function IssueGroups({
       <ul className="issue-groups">
         {analysis.issue_groups.map((g) => (
           <li key={g.code} className={active === g.code ? "active" : undefined}>
-            <SeverityBadge severity={g.severity} /> <code>{g.code}</code> · {g.count} {g.count === 1 ? "row" : "rows"} —{" "}
+            <SeverityBadge severity={g.severity} /> <code>{g.code}</code> · {g.count} {g.count === 1 ? "row" : "rows"}
+            {g.values && g.values > g.count ? ` · ${g.values} values` : ""} —{" "}
             {g.explanation}
             <span className="issue-actions">
               <button type="button" onClick={() => onFilter(active === g.code ? undefined : g.code)}>
