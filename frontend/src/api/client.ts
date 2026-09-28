@@ -23,6 +23,8 @@ import type {
   Timeline,
 } from "./types";
 
+import { getConfig, idToken, isLive, signIn } from "../auth";
+
 // In mock mode (default) MSW answers these requests in the browser.
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
 
@@ -36,10 +38,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  let base = API_BASE;
+  if (isLive()) {
+    // Live: the real BFF, with the signed-in user's ID token.
+    base = getConfig().apiUrl;
+    const token = await idToken();
+    if (!token) return signIn();
+    headers.authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(`${base}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
+  if (res.status === 401 && isLive()) return signIn();
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
     throw new ApiError(res.status, body.message ?? `Request failed (${res.status})`);

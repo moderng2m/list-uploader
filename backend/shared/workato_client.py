@@ -10,9 +10,13 @@ configured, and no real lead data is used.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
+
+from shared.observability import metrics
 
 MAX_CAMPAIGN_IDS = 50
 MAX_ENRICH_BATCH = 25
@@ -77,6 +81,25 @@ def assert_send_to_prod_allowed(payload: dict[str, Any], env: str) -> None:
         )
 
 
+T = TypeVar("T")
+
+
+def _measured(call: Callable[[], T], failed: Callable[[T], bool] = lambda _: False) -> T:
+    """Every callable call counts toward the Workato error-rate alarm (SPEC §21.3.4)."""
+    t0 = time.monotonic()
+    error = True
+    try:
+        result = call()
+        error = failed(result)
+        return result
+    finally:
+        metrics.add_metric(name="WorkatoCalls", unit="Count", value=1)
+        metrics.add_metric(name="WorkatoErrors", unit="Count", value=1 if error else 0)
+        metrics.add_metric(
+            name="WorkatoLatencyMs", unit="Milliseconds", value=int((time.monotonic() - t0) * 1000)
+        )
+
+
 class BaseWorkatoClient(ABC):
     def __init__(self, env: str) -> None:
         self.env = env
@@ -84,18 +107,19 @@ class BaseWorkatoClient(ABC):
     def lookup_campaigns(self, campaign_ids: list[str], *, caller_job_id: str) -> list[Campaign]:
         if len(campaign_ids) > MAX_CAMPAIGN_IDS:
             raise ValueError(f"at most {MAX_CAMPAIGN_IDS} campaign IDs per lookup")
-        return self._lookup_campaigns(campaign_ids, caller_job_id)
+        return _measured(lambda: self._lookup_campaigns(campaign_ids, caller_job_id))
 
     def enrich_contacts(
         self, contacts: list[dict[str, str]], *, caller_job_id: str
     ) -> dict[str, Any]:
         if len(contacts) > MAX_ENRICH_BATCH:
             raise ValueError(f"at most {MAX_ENRICH_BATCH} contacts per enrichment batch")
-        return self._enrich_contacts(contacts, caller_job_id)
+        return _measured(lambda: self._enrich_contacts(contacts, caller_job_id))
 
     def post_to_eloqua(self, payload: dict[str, Any]) -> PostResult:
+        # The guard runs before the call and isn't counted as a call.
         assert_send_to_prod_allowed(payload, self.env)
-        return self._post_to_eloqua(payload)
+        return _measured(lambda: self._post_to_eloqua(payload), failed=lambda result: not result.ok)
 
     @abstractmethod
     def _lookup_campaigns(self, campaign_ids: list[str], caller_job_id: str) -> list[Campaign]: ...

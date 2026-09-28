@@ -57,15 +57,19 @@ backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
     config_defaults.py   thresholds and limits (SPEC §14.4)
     lead_normalizer/     normalizer v5 goes here unmodified (P3)
   bff/                   API Gateway router (Powertools APIGatewayHttpResolver)
-  tasks/                 async task Lambdas (parse_file; analyze, enrich, send = workflow steps)
+  tasks/                 async task Lambdas (parse_file; analyze, enrich, send = workflow
+                         steps; monitor = 5-minute health check; canary = daily e2e)
   audit_archiver/        AuditEvents stream -> Firehose -> S3 archive
   tests/                 pytest + moto
     fixtures/synthetic/  generated sample files (make fixtures); never real data
-infra/                   CDK app (Python): Storage, Auth, Api, Workflows, Web
-  tests/                 synth assertions (IAM, encryption, audit immutability)
+infra/                   CDK app (Python): Web, Storage, AuditQuery, Auth, Workflows,
+                         Api, Monitoring, Site
+  tests/                 synth assertions (IAM, encryption, audit immutability, P7)
+ops/                     fire_alarms.py, verify_archive.py (post-deploy checks, dev)
 frontend/                React + Vite + TypeScript SPA
+  src/auth.ts            live sign-in: Cognito hosted page, code + PKCE
   src/mocks/             MSW handlers + synthetic fixtures (the default API)
-docs/                    SPEC.md, BUILD_PLAN.md
+docs/                    SPEC.md, BUILD_PLAN.md, DEPLOY.md (runbook)
 ```
 
 ## Commands
@@ -78,7 +82,12 @@ make fixtures    # regenerate synthetic sample files + downloadable template
 make synth       # cdk synth -c env=dev (bundles Lambda deps locally, no Docker)
 make web-dev     # frontend on the mock API
 make deploy      # dev only; needs AWS credentials for the personal account
+make fire-alarms # plan (EXECUTE=1 to fire) one fault per alarm, dev only
+make verify-archive JOB=j_...   # archive delivery + Athena as mops-audit-reader
 ```
+
+Pass deployer-specific context with `CDK_ARGS`, e.g.
+`make deploy CDK_ARGS="-c alert_emails=you@example.org"`. See docs/DEPLOY.md.
 
 Run `make lint test synth` before every commit.
 
@@ -278,6 +287,55 @@ Decisions made while building P6:
 - A threshold change requires junk_block >= junk_flag.
 - An alias can't duplicate another field's alias or any field's own name/key.
 
+## Hardening and deploy (P7)
+
+- **Stack order:** Web (bucket + CloudFront) first, so Storage (uploads CORS), Auth
+  (OAuth callback) and Api (CORS) pin the site's exact origin; Site copies the SPA
+  and `config.json` last. `web_origin` context overrides it for a custom domain.
+- **Live sign-in:** `VITE_API_MODE=live` builds (`make web-build-live`, used by
+  deploy) load `/config.json`, sign in through Cognito's hosted page with the
+  authorization code flow + PKCE (no client secret), keep tokens in
+  sessionStorage, and send the ID token (it has email and groups). The client
+  allows no password flows (`ExplicitAuthFlows` = refresh only). SAML federation
+  is added with `-c saml_metadata_url=... -c saml_idp_name=...`. The default build
+  is still the mock demo.
+- **Headers:** CloudFront sends a strict CSP (no inline scripts or styles), HSTS,
+  DENY framing, nosniff. Keep the SPA free of inline `style={}` or the CSP breaks it.
+- **Alarms** (Monitoring stack): one per SPEC §21.3.4 row plus the dev canary, all
+  to `list-uploader-alerts-<env>` (KMS-encrypted). Emails come from
+  `alert_emails` context. Metrics they read: WorkatoCalls/WorkatoErrors/
+  WorkatoLatencyMs (emitted by `BaseWorkatoClient` for every call; the send_to_prod
+  guard isn't a call), EnrichmentErrorPct per job, StuckSendingRows and
+  JobsStuckRunning (monitor Lambda, every 5 min, zero included), CanarySucceeded.
+- **Canary** (dev, daily 13:07 UTC): drives the real BFF routes in process with a
+  2-row synthetic file owned by `canary@list-uploader.invalid`, running the task
+  steps in process too; Step Functions wiring is covered by the workflow alarms.
+- **Audit archive querying** (AuditQuery stack): Glue table `events` (JSON lines,
+  partition projection on `dt`), workgroup `list-uploader-audit-<env>` (enforced,
+  SSE-KMS results, 30-day expiry), role `mops-audit-reader-<env>`, CloudTrail S3
+  data events on `audit/`. The archiver keeps subject/before/after/details as JSON
+  text for a stable schema.
+- **Least privilege:** `test_hardening.py` fails on any `Resource: "*"` beyond the
+  AWS-required X-Ray, Step Functions log-delivery and CloudFront invalidation
+  actions, and on any `service:*` action.
+- **Retention:** processed files and audit exports expire after 1 day; AuditEvents
+  items carry `expires_at` (audit_retention_days) and DynamoDB TTL removes the query
+  copy; the archiver ignores those TTL removals.
+- **Secrets:** non-fake configs (prod) get an empty Secrets Manager secret for the
+  Workato token, readable by the analyze/enrich/send tasks and the BFF only.
+
+Decisions made while building P7:
+- UAT with real Workato and the prod deploy are not done from this repo's account
+  (hard rule); the real Workato client isn't written yet.
+- The archive stays JSON lines, not Parquet as SPEC §21.2.4 says: at this volume
+  Athena reads JSON cheaply, and it avoids Firehose's schema-coupled conversion.
+- Firehose delivering into the Object Lock (governance) bucket isn't documented
+  either way; `make verify-archive` checks `audit-errors/` after the first deploy.
+- mops-audit-reader trusts the account; who may assume it is granted outside the
+  app (SSO permission set), which is the part that makes "non-MOps can't" true.
+- "Lambda errors above baseline" is a fixed threshold (5 in 5 minutes), not
+  anomaly detection.
+
 ## Phase status
 
 - P0 scaffold: done.
@@ -287,4 +345,6 @@ Decisions made while building P6:
 - P4 enrichment: done (fake ZoomInfo).
 - P5 gate and send: done (fake Post to Eloqua).
 - P6 history, admin, audit: done.
-- Next: P7 (hardening and deploy).
+- P7 hardening: built and synth-tested; not yet deployed (needs AWS credentials
+  for the personal account; see docs/DEPLOY.md). UAT with real Workato and prod
+  are out of scope for this account.

@@ -207,6 +207,10 @@ def finalize(job_id: str, deps: EnrichDeps) -> dict[str, Any]:
         metrics.add_metric(
             name=f"EnrichmentPct_{key}", unit="Percent", value=100.0 * enrichment[key] / sent
         )
+    # Rows fail a whole batch at a time, so this is the job's batch error rate.
+    metrics.add_metric(
+        name="EnrichmentErrorPct", unit="Percent", value=100.0 * enrichment["errors"] / sent
+    )
     for key, n in enrichment["fields_filled"].items():
         metrics.add_metric(name=f"EnrichmentFilled_{key}", unit="Count", value=n)
     metrics.add_metric(name="JobsReachedEnrichmentReview", unit="Count", value=1)

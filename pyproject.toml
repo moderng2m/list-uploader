@@ -30,7 +30,7 @@ default-groups = ["dev", "infra"]
 
 [tool.pytest.ini_options]
 pythonpath = ["backend", "."]
-testpaths = ["backend/tests", "infra/tests"]
+testpaths = ["backend/tests", "infra/tests", "ops/tests"]
 addopts = "-q"
 
 [tool.ruff]
@@ -51,7 +51,7 @@ known-first-party = ["shared", "bff", "audit_archiver", "tasks", "tests", "infra
 [tool.mypy]
 python_version = "3.11"
 mypy_path = "backend"
-packages = ["shared", "bff", "audit_archiver", "tasks", "infra"]
+packages = ["shared", "bff", "audit_archiver", "tasks", "infra", "ops"]
 explicit_package_bases = true
 exclude = ["infra/tests/"]
 strict = true

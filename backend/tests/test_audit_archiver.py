@@ -46,7 +46,8 @@ def test_forwards_inserts_as_json_lines() -> None:
         "job_id": "j_1",
         "event_id": "e1",
         "row_id": 12,
-        "after": {"title": "VP Marketing"},
+        # Payloads stay JSON text, as in the table (stable Glue schema).
+        "after": '{"title": "VP Marketing"}',
     }
 
 
@@ -55,6 +56,16 @@ def test_counts_non_inserts() -> None:
         {"Records": [{"eventName": "REMOVE", "dynamodb": {}}]}, None, firehose=FakeFirehose()
     )
     assert result == {"archived": 0, "unexpected": 1}
+
+
+def test_ttl_expiry_is_expected() -> None:
+    expiry = {
+        "eventName": "REMOVE",
+        "userIdentity": {"type": "Service", "principalId": "dynamodb.amazonaws.com"},
+        "dynamodb": {},
+    }
+    result = handler({"Records": [expiry]}, None, firehose=FakeFirehose())
+    assert result == {"archived": 0, "unexpected": 0}
 
 
 def test_firehose_rejection_raises_for_retry() -> None:

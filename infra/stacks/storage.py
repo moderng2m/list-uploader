@@ -29,7 +29,9 @@ AUDIT_FORBIDDEN_ACTIONS = [
 
 
 class StorageStack(Stack):
-    def __init__(self, scope: Construct, cid: str, *, cfg: EnvConfig, **kwargs: object) -> None:
+    def __init__(
+        self, scope: Construct, cid: str, *, cfg: EnvConfig, web_origin: str, **kwargs: object
+    ) -> None:
         super().__init__(scope, cid, **kwargs)  # type: ignore[arg-type]
 
         self.key = kms.Key(
@@ -69,7 +71,7 @@ class StorageStack(Stack):
             cors=[
                 s3.CorsRule(
                     allowed_methods=[s3.HttpMethods.POST],  # presigned POST
-                    allowed_origins=["*"],  # narrowed to the CloudFront origin in P7
+                    allowed_origins=[web_origin],  # only the SPA may upload
                     allowed_headers=["*"],
                     max_age=3000,
                 )
@@ -79,9 +81,11 @@ class StorageStack(Stack):
         self.processed = s3.Bucket(
             self,
             "Processed",
+            # Processed CSVs and audit exports are generated per download and only
+            # needed for the few minutes their link is valid.
             lifecycle_rules=[
                 s3.LifecycleRule(
-                    expiration=Duration.days(cfg.raw_file_retention_days),
+                    expiration=Duration.days(cfg.processed_file_retention_days),
                     noncurrent_version_expiration=Duration.days(1),
                 )
             ],
@@ -141,6 +145,9 @@ class StorageStack(Stack):
             partition_key=ddb.Attribute(name="job_id", type=ddb.AttributeType.STRING),
             sort_key=ddb.Attribute(name="sk", type=ddb.AttributeType.STRING),
             dynamo_stream=ddb.StreamViewType.NEW_IMAGE,
+            # The fast query copy expires with the retention period; the S3 archive
+            # is the system of record (SPEC §21.2.4).
+            time_to_live_attribute="expires_at",
             global_secondary_indexes=[
                 ddb.GlobalSecondaryIndexPropsV2(
                     index_name="by_email",
@@ -187,7 +194,7 @@ class StorageStack(Stack):
         )
         self.audit_stream.node.add_dependency(firehose_role)
 
-        archiver = lambda_.Function(
+        self.archiver = archiver = lambda_.Function(
             self,
             "AuditArchiver",
             runtime=RUNTIME,

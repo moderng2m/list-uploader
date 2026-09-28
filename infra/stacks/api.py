@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_apigatewayv2 as apigw
 from aws_cdk import aws_apigatewayv2_authorizers as authorizers
@@ -28,6 +30,7 @@ class ApiStack(Stack):
         storage: StorageStack,
         auth: AuthStack,
         workflows: WorkflowsStack,
+        web_origin: str,
         **kwargs: object,
     ) -> None:
         super().__init__(scope, cid, **kwargs)  # type: ignore[arg-type]
@@ -41,6 +44,7 @@ class ApiStack(Stack):
             "ROWS_TABLE": storage.rows.table_name,
             "CONFIG_TABLE": storage.config_table.table_name,
             "AUDIT_TABLE": storage.audit_events.table_name,
+            "AUDIT_RETENTION_DAYS": str(cfg.audit_retention_days),
             "UPLOADS_BUCKET": storage.uploads.bucket_name,
             "PROCESSED_BUCKET": storage.processed.bucket_name,
             "ROW_RETENTION_DAYS": str(cfg.row_retention_days),
@@ -121,6 +125,9 @@ class ApiStack(Stack):
             )
         )
         storage.processed.grant_read_write(self.bff)
+        if workflows.workato_secret is not None:
+            workflows.workato_secret.grant_read(self.bff)
+            self.bff.add_environment("WORKATO_SECRET_ARN", workflows.workato_secret.secret_arn)
         grant_audit_append(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
         grant_audit_read(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
         storage.key.grant_encrypt_decrypt(self.bff)
@@ -137,8 +144,13 @@ class ApiStack(Stack):
             api_name=f"list-uploader-{cfg.name}",
             default_authorizer=authorizer,
             cors_preflight=apigw.CorsPreflightOptions(
-                allow_origins=["*"],  # narrowed to the CloudFront origin in P7
-                allow_methods=[apigw.CorsHttpMethod.ANY],
+                allow_origins=[web_origin],
+                allow_methods=[
+                    apigw.CorsHttpMethod.GET,
+                    apigw.CorsHttpMethod.POST,
+                    apigw.CorsHttpMethod.PUT,
+                    apigw.CorsHttpMethod.PATCH,
+                ],
                 allow_headers=["authorization", "content-type"],
                 max_age=Duration.hours(1),
             ),
@@ -152,5 +164,34 @@ class ApiStack(Stack):
                 apigw.HttpMethod.PATCH,
             ],
             integration=integrations.HttpLambdaIntegration("BffIntegration", self.bff),
+        )
+        # Throttling and access logs on the default stage. Logs hold request IDs,
+        # routes, status and latency only: no IP, user or body.
+        stage = self.http_api.default_stage
+        assert stage is not None
+        cfn_stage = stage.node.default_child
+        assert isinstance(cfn_stage, apigw.CfnStage)
+        cfn_stage.default_route_settings = apigw.CfnStage.RouteSettingsProperty(
+            throttling_rate_limit=cfg.api_rate_limit,
+            throttling_burst_limit=cfg.api_burst_limit,
+        )
+        access_logs = logs.LogGroup(
+            self,
+            "ApiAccessLogs",
+            retention=logs.RetentionDays.THREE_MONTHS,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        cfn_stage.access_log_settings = apigw.CfnStage.AccessLogSettingsProperty(
+            destination_arn=access_logs.log_group_arn,
+            format=json.dumps(
+                {
+                    "requestId": "$context.requestId",
+                    "routeKey": "$context.routeKey",
+                    "status": "$context.status",
+                    "latencyMs": "$context.responseLatency",
+                    "integrationError": "$context.integrationErrorMessage",
+                    "authorizerError": "$context.authorizer.error",
+                }
+            ),
         )
         CfnOutput(self, "ApiUrl", value=self.http_api.api_endpoint)

@@ -8,6 +8,7 @@ from __future__ import annotations
 from aws_cdk import Duration, RemovalPolicy, Stack
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
+from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_stepfunctions as sfn
 from aws_cdk import aws_stepfunctions_tasks as tasks
 from constructs import Construct
@@ -39,6 +40,21 @@ class WorkflowsStack(Stack):
         self.enrich_task = self._task_function(cfg, storage, "EnrichTask", "tasks.enrich.handler")
         self.send_task = self._task_function(cfg, storage, "SendTask", "tasks.send.handler")
 
+        # Workato API token (SPEC §21.1). Created empty; its value is set out of band
+        # and never in code. Dev uses the fake client and has no secret at all.
+        self.workato_secret: secretsmanager.Secret | None = None
+        if cfg.integrations != "fake":
+            self.workato_secret = secretsmanager.Secret(
+                self,
+                "WorkatoToken",
+                secret_name=f"list-uploader/{cfg.name}/workato-api-token",
+                description="Workato API Platform token for the List Uploader callables",
+                removal_policy=RemovalPolicy.RETAIN,
+            )
+            for fn in (self.analyze_task, self.enrich_task, self.send_task):
+                self.workato_secret.grant_read(fn)
+                fn.add_environment("WORKATO_SECRET_ARN", self.workato_secret.secret_arn)
+
         self.state_machines: dict[str, sfn.StateMachine] = {
             "Analyze": self._analyze_machine(cfg),
             "Enrich": self._enrich_machine(cfg),
@@ -66,6 +82,7 @@ class WorkflowsStack(Stack):
                 "ROWS_TABLE": storage.rows.table_name,
                 "CONFIG_TABLE": storage.config_table.table_name,
                 "AUDIT_TABLE": storage.audit_events.table_name,
+                "AUDIT_RETENTION_DAYS": str(cfg.audit_retention_days),
                 "SEND_TO_PROD": "true" if cfg.send_to_prod else "false",
                 "POWERTOOLS_SERVICE_NAME": "list-uploader",
                 "POWERTOOLS_METRICS_NAMESPACE": "ListUploader",

@@ -55,7 +55,6 @@ class BffDeps:
 
     @classmethod
     def from_env(cls) -> BffDeps:
-        audit = AuditWriter()
         lambda_client = boto3.client("lambda")
         parse_fn = os.environ["PARSE_FUNCTION"]
 
@@ -90,8 +89,27 @@ class BffDeps:
                 input=json.dumps({"job_id": job_id, "only_failed": only_failed}),
             )
 
+        return cls.with_starters(
+            start_parse=start_parse,
+            start_analysis=start_analysis,
+            start_enrichment=start_enrichment,
+            start_send=start_send,
+        )
+
+    @classmethod
+    def with_starters(
+        cls,
+        *,
+        start_parse: Callable[[str], None],
+        start_analysis: Callable[[str], None],
+        start_enrichment: Callable[[str], None],
+        start_send: Callable[[str, bool], None],
+    ) -> BffDeps:
+        """Everything from the environment except how async work is started (the
+        canary runs it in-process instead)."""
         if os.environ.get("INTEGRATIONS", "fake") != "fake":
             raise RuntimeError("only INTEGRATIONS=fake is wired up in this build")
+        audit = AuditWriter()
         return cls(
             start_analysis=start_analysis,
             start_enrichment=start_enrichment,

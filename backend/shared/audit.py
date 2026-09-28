@@ -15,7 +15,7 @@ import os
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, TypeVar
@@ -27,6 +27,9 @@ from shared.ids import new_ulid
 from shared.observability import env_name, logger, metrics
 
 T = TypeVar("T")
+
+# Matches the audit archive's retention (SPEC §21.2.5, interim 2 years).
+DEFAULT_RETENTION_DAYS = 730
 
 # Partition for events not tied to a job (admin config changes, denied admin routes).
 GLOBAL_PARTITION = "_global"
@@ -114,8 +117,11 @@ class AuditEvent:
     event_id: str = field(default_factory=new_ulid)
     occurred_at: str = field(default_factory=_now_iso)
 
-    def to_item(self, *, env: str, app_version: str) -> dict[str, Any]:
+    def to_item(
+        self, *, env: str, app_version: str, retention_days: int = DEFAULT_RETENTION_DAYS
+    ) -> dict[str, Any]:
         """DynamoDB item. Nested payloads are JSON strings so floats and nulls survive."""
+        occurred = datetime.fromisoformat(self.occurred_at.replace("Z", "+00:00"))
         item: dict[str, Any] = {
             "job_id": self.job_id or GLOBAL_PARTITION,
             "sk": f"{self.occurred_at}#{self.event_id}",
@@ -125,6 +131,8 @@ class AuditEvent:
             "env": env,
             "app_version": app_version,
             "actor": {k: v for k, v in _actor_dict(self.actor).items() if v is not None},
+            # DynamoDB TTL (epoch seconds): the query copy expires; the archive stays.
+            "expires_at": int((occurred + timedelta(days=retention_days)).timestamp()),
         }
         optional: dict[str, Any] = {
             "row_id": self.row_id,
@@ -190,6 +198,9 @@ class AuditWriter:
         self._table_name = table_name or os.environ["AUDIT_TABLE"]
         self._env = env or env_name()
         self._app_version = app_version or os.environ.get("APP_VERSION", "0.0.0+local")
+        self._retention_days = int(
+            os.environ.get("AUDIT_RETENTION_DAYS", str(DEFAULT_RETENTION_DAYS))
+        )
         self._table = (dynamodb_resource or boto3.resource("dynamodb")).Table(self._table_name)
         self._client = self._table.meta.client
 
@@ -201,8 +212,13 @@ class AuditWriter:
     def table_name(self) -> str:
         return self._table_name
 
+    def _item(self, event: AuditEvent) -> dict[str, Any]:
+        return event.to_item(
+            env=self._env, app_version=self._app_version, retention_days=self._retention_days
+        )
+
     def write(self, event: AuditEvent) -> AuditEvent:
-        item = event.to_item(env=self._env, app_version=self._app_version)
+        item = self._item(event)
         try:
             self._table.put_item(Item=item, ConditionExpression=_AUDIT_CONDITION)
         except Exception as exc:
@@ -221,7 +237,7 @@ class AuditWriter:
             {
                 "Put": {
                     "TableName": self._table_name,
-                    "Item": e.to_item(env=self._env, app_version=self._app_version),
+                    "Item": self._item(e),
                     "ConditionExpression": _AUDIT_CONDITION,
                 }
             }

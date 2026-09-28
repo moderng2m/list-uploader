@@ -1,7 +1,12 @@
 """AuditEvents stream -> Firehose -> S3 audit archive (SPEC §21.2.4).
 
-Only INSERTs are forwarded; the table is append-only, so any MODIFY/REMOVE is
-unexpected and is counted as a metric rather than archived.
+Only INSERTs are forwarded. Removals by DynamoDB's own TTL (the fast query copy
+expires after the retention period; the archive is the system of record) are
+expected and skipped. Any other MODIFY/REMOVE on the append-only table is
+unexpected: it is counted and logged as an error, not archived.
+
+subject/before/after/details stay JSON strings, as in the table, so the Glue
+table's schema never changes with them; query them with json_extract().
 """
 
 from __future__ import annotations
@@ -32,13 +37,20 @@ def to_archive_record(new_image: dict[str, Any]) -> dict[str, Any]:
     item = {k: _deserializer.deserialize(v) for k, v in new_image.items()}
     record: dict[str, Any] = {}
     for key, value in item.items():
-        if key in ("subject", "before", "after", "details") and isinstance(value, str):
-            record[key] = json.loads(value)
-        elif isinstance(value, Decimal):
+        if isinstance(value, Decimal):
             record[key] = int(value) if value == int(value) else float(value)
         else:
             record[key] = value
     return record
+
+
+def _ttl_expiry(rec: dict[str, Any]) -> bool:
+    identity = rec.get("userIdentity") or {}
+    return (
+        rec.get("eventName") == "REMOVE"
+        and identity.get("type") == "Service"
+        and identity.get("principalId") == "dynamodb.amazonaws.com"
+    )
 
 
 def handler(event: dict[str, Any], context: Any, firehose: Any = None) -> dict[str, int]:
@@ -48,7 +60,8 @@ def handler(event: dict[str, Any], context: Any, firehose: Any = None) -> dict[s
     unexpected = 0
     for rec in event.get("Records", []):
         if rec.get("eventName") != "INSERT":
-            unexpected += 1
+            if not _ttl_expiry(rec):
+                unexpected += 1
             continue
         archived = to_archive_record(rec["dynamodb"]["NewImage"])
         records.append({"Data": (json.dumps(archived, default=str) + "\n").encode("utf-8")})

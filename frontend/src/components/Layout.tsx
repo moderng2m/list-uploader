@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { isLive, signOut } from "../auth";
 import { useApi } from "./useApi";
 
 const STEPS = [
@@ -44,9 +45,16 @@ export function Layout() {
           <NavLink to="/history">History</NavLink>
           {isAdmin && <NavLink to="/admin">Admin</NavLink>}
         </nav>
-        <span className="whoami">{me.status === "ready" ? me.data.email : ""}</span>
+        <span className="whoami">
+          {me.status === "ready" ? me.data.email : ""}
+          {isLive() && (
+            <button type="button" className="link" onClick={signOut}>
+              Sign out
+            </button>
+          )}
+        </span>
       </header>
-      {import.meta.env.VITE_API_MODE !== "live" && (
+      {!isLive() && (
         <div className="mock-banner" role="note">
           Demo mode: all data is synthetic and nothing is sent anywhere.
         </div>

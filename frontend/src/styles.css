@@ -204,3 +204,4 @@ button.link { border: none; background: none; color: var(--accent); text-decorat
 .ls-value { overflow-wrap: anywhere; }
 .ls-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .ls-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }
+.whoami .link { margin-left: 0.75rem; }
