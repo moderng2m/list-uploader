@@ -44,24 +44,75 @@ class HeuristicFakeBedrock(BedrockClient):
     def _invoke_raw(self, system: str, prompt: str, schema: dict[str, Any]) -> RawResponse:
         match = _INPUT.search(prompt)
         payload = json.loads(match.group(1)) if match else {}
-        items = []
-        for col in payload.get("columns", []):
-            fields = payload.get("allowed_fields", [])
-            scored = sorted(((_score(col["source_header"], f), f) for f in fields),
-                            key=lambda pair: pair[0], reverse=True)  # fmt: skip
-            if scored and scored[0][0] >= 0.6:
-                score, best = scored[0]
+        if "rows" in payload:
+            items = _junk(payload["rows"])
+        elif "values" in payload:
+            items = _lead_sources(payload["values"], payload.get("allowed", []))
+        else:
+            items = _mapping(payload)
+        return RawResponse(text=json.dumps({"items": items}), input_tokens=0, output_tokens=0)
+
+
+_JUNK_WORDS = {"test", "asdf", "n/a", "none", "xxx", "qwerty", "fake", "sample", "-", "."}
+
+
+def _junk(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items = []
+    for row in rows:
+        for field in ("first_name", "last_name", "company", "title"):
+            value = str(row.get(field, "")).strip().casefold()
+            if value in _JUNK_WORDS or (len(value) >= 3 and len(set(value)) == 1):
                 items.append({
-                    "source_header": col["source_header"],
+                    "row_id": row["row_id"], "field": field, "reason_code": "placeholder",
+                    "confidence": 0.95, "explanation": "Looks like a placeholder (demo heuristic).",
+                })  # fmt: skip
+        local = str(row.get("email", "")).partition("@")[0].casefold()
+        if local in {"test", "asdf", "noreply"}:
+            items.append({
+                "row_id": row["row_id"], "field": "email", "reason_code": "test_record",
+                "confidence": 0.9, "explanation": "Looks like a test address (demo heuristic).",
+            })  # fmt: skip
+    return items
+
+
+def _lead_sources(values: list[str], allowed: list[str]) -> list[dict[str, Any]]:
+    items = []
+    for value in values:
+        scored = sorted(
+            ((SequenceMatcher(None, value.casefold(), a.casefold()).ratio(), a) for a in allowed),
+            reverse=True,
+        )
+        if scored and scored[0][0] >= 0.5:
+            items.append({"input": value, "match": scored[0][1],
+                          "confidence": round(min(0.97, scored[0][0] + 0.2), 2)})  # fmt: skip
+        else:
+            items.append({"input": value, "match": None, "confidence": 0.1})
+    return items
+
+
+def _mapping(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = []
+    fields = payload.get("allowed_fields", [])
+    for col in payload.get("columns", []):
+        header = col["source_header"]
+        scored = sorted(((_score(header, f), f) for f in fields), key=lambda p: p[0], reverse=True)
+        if scored and scored[0][0] >= 0.6:
+            score, best = scored[0]
+            items.append(
+                {
+                    "source_header": header,
                     "field_key": best["field_key"],
                     "confidence": round(min(0.95, score), 2),
                     "reason": "Header resembles the field name (demo heuristic).",
-                })  # fmt: skip
-            else:
-                items.append({
-                    "source_header": col["source_header"],
+                }
+            )
+        else:
+            items.append(
+                {
+                    "source_header": header,
                     "field_key": None,
                     "confidence": 0.2,
                     "reason": "No field looks like a match (demo heuristic).",
-                })  # fmt: skip
-        return RawResponse(text=json.dumps({"items": items}), input_tokens=0, output_tokens=0)
+                }
+            )
+    return items

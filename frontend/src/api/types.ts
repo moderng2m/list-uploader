@@ -66,6 +66,7 @@ export interface Job {
   file?: { size?: number; sha256?: string; version_id?: string };
   parse?: ParseSummary;
   parse_error?: { code: string; message: string };
+  last_error?: { stage: string; message: string };
   // Filled in by later phases.
   campaigns?: string[];
   summary?: JobSummary;
@@ -107,26 +108,49 @@ export interface Mapping {
 }
 
 export interface Issue {
-  field: string;
-  severity: Severity;
   code: string;
+  severity: Severity;
   message: string;
+  field: string | null;
+  source: "rule" | "ai" | "sfdc" | "enrichment" | "parse";
+  suggestion?: {
+    value?: string;
+    confidence?: number | null;
+    options?: string[];
+    first_row_id?: number;
+    reason?: string;
+  };
+  pending?: boolean;
 }
+
+export type BulkAction = "accept_lead_source_suggestions" | "exclude_duplicates" | "exclude_junk" | "set_status";
 
 export interface IssueGroup {
   code: string;
   severity: Severity;
   count: number;
   explanation: string;
-  bulk_action: string | null;
+  bulk_action: BulkAction | null;
+  bulk_action_label: string | null;
 }
 
 export interface Row {
   row_id: number;
   status: RowStatus;
+  excluded: boolean;
+  /** Raw values from the file, keyed by catalog field. */
   source: Record<string, string>;
   processed: Record<string, string>;
+  provenance: Record<string, string>;
   issues: Issue[];
+  user_edits: { field: string; from: string; to: string; by: string; at: string }[];
+  dismissed: string[];
+}
+
+export interface RowsPage {
+  total: number;
+  offset: number;
+  rows: Row[];
 }
 
 export interface CampaignCard {
@@ -135,16 +159,29 @@ export interface CampaignCard {
   name: string | null;
   type: string | null;
   is_active: boolean | null;
-  member_statuses: string[];
+  statuses: string[];
+  default_status: string | null;
   row_count: number;
 }
 
 export interface Analysis {
+  state: JobState;
+  editable: boolean;
+  enrich: boolean;
   summary: JobSummary;
   issue_groups: IssueGroup[];
-  rows: Row[];
   campaigns: CampaignCard[];
+  lead_sources: string[];
   enrichment_lookup_count: number;
+  notes: string[];
+  normalizer_version: string | null;
+}
+
+export interface RowChange {
+  processed?: Record<string, string>;
+  excluded?: boolean;
+  dismiss?: string;
+  restore?: string;
 }
 
 export interface EnrichmentReviewItem {

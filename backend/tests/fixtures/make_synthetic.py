@@ -64,20 +64,20 @@ INSTRUCTIONS = [
 # Row 2 holds only the stray #VALUE! in E2 that ships with the real template.
 # Row 5 is blank.
 _LEADS: list[list[object]] = [
-    ["Acme Demo Co", "Ada", "Example", "ada@example.com", "Marketing: Events",
+    ["Acme Demo Co", "Ada", "Example", "ada@acme.example", "Marketing: Events",
      "701000000000001AAA", "VP Marketing", 5550100100, "+1 555-010-0199", "1 Demo Way",
      "Boston", "MA", 2134, "United States", "Met at booth 12", 1000000001, 2000000001,
-     "Attended", 541511, "Software", "acme.example.com", 250, "Demo Conf 2026 - Booth",
+     "Attended", 541511, "Software", "acme.example", 250, "Demo Conf 2026 - Booth",
      "", "Demo Conference 2026"],
-    ["Globex Test Inc", "José", "Müller", "jose.muller@example.org", "Events",
+    ["Globex Test Inc", "José", "Müller", "jose.muller@globex.example", "Events",
      "701000000000001AAA", "Director, Operations", 5550100101, "", "22 Sample St",
      "Chicago", "IL", 60601, "USA", "", "", "", "", 522110, "Financial Services",
-     "https://globex.example.org", 1200, "Demo Conf 2026 - Booth", "", ""],
+     "https://globex.example", 1200, "Demo Conf 2026 - Booth", "", ""],
     None,  # blank row
-    ["Initech Sample", "Zoë", "Placeholder", "zoe@example.net", "", "701000000000001AAA",
+    ["Initech Sample", "Zoë", "Placeholder", "zoe@initech.example", "", "701000000000001AAA",
      "CFO", "", "", "", "Austin", "TX", 73301, "US", "", "", "", "Registered", "", "", "",
      "10-50", "Demo Conf 2026 - Booth", "", ""],
-    ["Umbrella Fake LLC", "Linus", "Sample", "linus@example.com", "Marketing: Events",
+    ["Umbrella Fake LLC", "Linus", "Sample", "linus@umbrella.example", "Marketing: Events",
      "701000000000002AAA", "Engineer", 5550100103, "", "", "", "", "", "Canada", "", "", "",
      "", "", "", "", 75, "Demo Webinar - Registrants", "", ""],
 ]  # fmt: skip
@@ -139,9 +139,9 @@ def write_vendor_xlsx(path: Path) -> None:
     headers = ["E-mail", "Org", "Job Position", "First", "Last", "Phone", "Phone", None,
                "Scan Date", "Zip", "Score", "Opt In"]  # fmt: skip
     data = [
-        ["ada@example.com", "Acme Demo Co", "VP Marketing", "Ada", "Example", 5550100100.0,
+        ["ada@acme.example", "Acme Demo Co", "VP Marketing", "Ada", "Example", 5550100100.0,
          "555-010-0198", "booth A", datetime(2026, 9, 15), 2134, 12.5, True],
-        ["grace@example.org", "Globex Test Inc", "Director", "Grace", "Sample", None,
+        ["grace@globex.example", "Globex Test Inc", "Director", "Grace", "Sample", None,
          None, None, datetime(2026, 9, 15, 14, 30), 501, 7, False],
         ["test@test.com", "asdf", "n/a", "Test", "Test", "", "", "", None, "", None, None],
     ]  # fmt: skip
@@ -162,9 +162,9 @@ def write_vendor_xlsx(path: Path) -> None:
 def cp1252_rows() -> list[list[object]]:
     return [
         ["Company", "First name", "Last Name", "Email Address", "Notes additional Information"],
-        ["Société Générale Démo", "José", "Müller", "jose@example.com",
+        ["Société Générale Démo", "José", "Müller", "jose@societe.example",
          "Prefers “email” – no calls"],
-        ["Café Zoë", "Zoë", "Brontë", "zoe@example.org", "Price in € noted"],
+        ["Café Zoë", "Zoë", "Brontë", "zoe@cafe.example", "Price in € noted"],
     ]  # fmt: skip
 
 
@@ -176,6 +176,40 @@ def semicolon_rows() -> list[list[object]]:
     ]  # fmt: skip
 
 
+def analysis_rows() -> list[list[object]]:
+    """P3 acceptance file: campaign ID variants, statuses, lead sources, junk, duplicates."""
+    header = ["Company", "First name", "Last Name", "Email Address", "SFDC Last Campaign ID",
+              "SFDC Last Campaign Status", "Lead Source - Most Recent", "Business Phone",
+              "Zip or Postal Code", "Country"]  # fmt: skip
+    return [
+        header,
+        # 2: 15-char ID, blank status -> default, "Events" -> "Marketing: Events"
+        ["Acme Demo Co", "Ada", "Example", "ada@acme.example", "701000000000001", "", "Events",
+         "555-010-0100", "2134", "USA"],
+        # 3: bad checksum (retyped suffix)
+        ["Globex Test Inc", "Grace", "Sample", "grace@globex.example", "701000000000001AAB",
+         "Attended", "Marketing: Events", "", "", ""],
+        # 4: valid ID that Salesforce doesn't have
+        ["Initech Sample", "Alan", "Placeholder", "alan@initech.example", "701000000000009AAA",
+         "Registered", "Marketing: Events", "", "", ""],
+        # 5: duplicate of row 2 (same email, same campaign in 18-char form)
+        ["Acme Demo Co", "Ada", "Example", "ADA@acme.example", "701000000000001AAA", "Attended",
+         "Marketing: Events", "", "", ""],
+        # 6: junk
+        ["asdf", "Test", "Test", "test@umbrella.example", "701000000000001AAA", "Attended",
+         "Marketing: Events", "", "", ""],
+        # 7: webinar campaign, misspelled status, lead source that needs the AI step
+        ["Hooli Example", "Linus", "Sample", "linus@hooli.example", "701000000000002AAA",
+         "Atended", "Webcast", "", "", ""],
+        # 8: blank company (pending when enrichment is on)
+        ["", "Kay", "Sample", "kay@pied.example", "701000000000001AAA", "Registered",
+         "Marketing: Events", "", "", ""],
+        # 9: inactive campaign, role inbox, bad phone
+        ["Vandelay Demo", "Art", "Sample", "info@vandelay.example", "701000000000003AAA",
+         "Attended", "Marketing: Events", "12345", "", ""],
+    ]  # fmt: skip
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     write_template_xlsx(OUT / "template_filled.xlsx", with_data=True)
@@ -183,6 +217,7 @@ def main() -> None:
     write_csv(OUT / "windows_1252.csv", cp1252_rows(), encoding="cp1252")
     write_csv(OUT / "semicolon.csv", semicolon_rows(), encoding="utf-8", delimiter=";")
     write_vendor_xlsx(OUT / "vendor_export.xlsx")
+    write_csv(OUT / "analysis_demo.csv", analysis_rows(), encoding="utf-8")
     PUBLIC.mkdir(parents=True, exist_ok=True)
     write_template_xlsx(PUBLIC / "List_Upload_Template.xlsx", with_data=False)
     print(f"wrote fixtures to {OUT} and template to {PUBLIC}")

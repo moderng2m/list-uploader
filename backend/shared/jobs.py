@@ -16,7 +16,7 @@ from typing import Any
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from shared.audit import Actor, AuditEvent, AuditWriter, EventType
+from shared.audit import Actor, AuditEvent, AuditWriter, EventType, to_dynamo
 from shared.ids import new_job_id
 
 
@@ -54,6 +54,8 @@ ALLOWED: dict[JobState, frozenset[JobState]] = {
     S.ENRICHMENT_REVIEW: frozenset({S.READY_TO_SEND, S.CANCELLED}),
     S.READY_TO_SEND: frozenset({S.SENDING}),
     S.SENDING: frozenset({S.COMPLETED, S.COMPLETED_WITH_ERRORS}),
+    # SPEC §5.1: after an unrecoverable error the user can retry.
+    S.FAILED: frozenset({S.ANALYZING}),
 }
 # FAILED can follow any running state; review states can expire (SPEC §5.1).
 for _state in RUNNING:
@@ -211,6 +213,36 @@ class JobRepo:
             remove_fields=remove_fields,
             events=[*events, change],
         )
+
+    def update_cached(self, job_id: str, state: JobState, set_fields: dict[str, Any]) -> None:
+        """Refresh derived, recomputable data (e.g. summary counts) with no audit event.
+
+        Never use this for anything a user or the system decided; use
+        `update_in_state` for that.
+        """
+        names = {f"#f{i}": name for i, name in enumerate(set_fields)}
+        values = {f":v{i}": to_dynamo(value) for i, value in enumerate(set_fields.values())}
+        names["#state"] = "state"
+        values[":expected"] = str(state)
+        self._table.update_item(
+            Key={"job_id": job_id},
+            UpdateExpression="SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(set_fields))),
+            ConditionExpression="#state = :expected",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+
+    def condition_in_state(self, job_id: str, state: JobState) -> dict[str, Any]:
+        """A TransactWriteItems ConditionCheck: the job is still in `state`."""
+        return {
+            "ConditionCheck": {
+                "TableName": self.table_name,
+                "Key": {"job_id": job_id},
+                "ConditionExpression": "#state = :expected",
+                "ExpressionAttributeNames": {"#state": "state"},
+                "ExpressionAttributeValues": {":expected": str(state)},
+            }
+        }
 
     def update_in_state(
         self,

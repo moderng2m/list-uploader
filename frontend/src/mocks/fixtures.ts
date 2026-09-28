@@ -7,9 +7,11 @@ import type {
   GateResult,
   Job,
   LeadSource,
+  Issue,
   Mapping,
   Me,
   ParseSummary,
+  Row,
   SendResult,
 } from "../api/types";
 
@@ -20,10 +22,10 @@ const CAMPAIGN_B = "701000000000002AAA";
 export const me: Me = { email: "demo.uploader@example.com", is_admin: true };
 
 const summary = {
-  rows_total: 6,
-  rows_ready: 2,
+  rows_total: 8,
+  rows_ready: 1,
   rows_warning: 1,
-  rows_blocked: 2,
+  rows_blocked: 5,
   rows_excluded: 0,
   rows_pending_enrichment: 1,
 };
@@ -132,26 +134,119 @@ export const mapping: Mapping = {
   ai_note: null,
 };
 
+const EVENT_STATUSES = ["Registered", "Attended", "No Show"];
+const LIST = (c: string) => `${c} \u2013 2026-09-28 \u2013 ${me.email}`;
+
+function issue(code: string, severity: Issue["severity"], field: string | null, message: string, extra: Partial<Issue> = {}): Issue {
+  return { code, severity, field, message, source: "rule", ...extra };
+}
+
+// Mirrors what the backend returns for backend/tests/fixtures/synthetic/analysis_demo.csv.
+export const analysisRows: Row[] = [
+  {
+    row_id: 2, status: "ready", excluded: false,
+    source: { company: "Acme Demo Co", first_name: "Ada", last_name: "Example", email: "ada@acme.example", campaign_id: "701000000000001", campaign_status: "", lead_source: "Events" },
+    processed: { company: "Acme Demo Co", first_name: "Ada", last_name: "Example", email: "ada@acme.example", campaign_id: CAMPAIGN_A, campaign_status: "Registered", lead_source: "Marketing: Events", campaign_name: "Demo Conference 2026", list_name: LIST("Demo Conference 2026") },
+    provenance: { campaign_id: "normalized", campaign_status: "derived:sfdc_default_status", lead_source: "auto_corrected:rule:marketing_prefix" },
+    issues: [
+      issue("LEAD_SOURCE_AUTO_CORRECTED", "info", "lead_source", "Lead source 'Events' was changed to 'Marketing: Events'."),
+      issue("STATUS_DEFAULTED", "info", "campaign_status", "Status was blank, so this campaign's default, 'Registered', will be used.", { source: "sfdc" }),
+    ],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 3, status: "blocked", excluded: false,
+    source: { company: "Globex Test Inc", first_name: "Grace", last_name: "Sample", email: "grace@globex.example", campaign_id: "701000000000001AAB", campaign_status: "Attended", lead_source: "Marketing: Events" },
+    processed: { company: "Globex Test Inc", first_name: "Grace", last_name: "Sample", email: "grace@globex.example", campaign_id: "701000000000001AAB", campaign_status: "Attended", lead_source: "Marketing: Events" },
+    provenance: {},
+    issues: [issue("CAMPAIGN_ID_FORMAT", "blocking", "campaign_id", "Campaign ID 701000000000001AAB looks mistyped — its last three characters don't match. IDs are case-sensitive; copy it directly from Salesforce.")],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 4, status: "blocked", excluded: false,
+    source: { company: "Initech Sample", first_name: "Alan", last_name: "Placeholder", email: "alan@initech.example", campaign_id: "701000000000009AAA", campaign_status: "Registered", lead_source: "Marketing: Events" },
+    processed: { company: "Initech Sample", first_name: "Alan", last_name: "Placeholder", email: "alan@initech.example", campaign_id: "701000000000009AAA", campaign_status: "Registered", lead_source: "Marketing: Events" },
+    provenance: {},
+    issues: [issue("CAMPAIGN_NOT_FOUND", "blocking", "campaign_id", "Campaign ID 701000000000009AAA wasn't found in Salesforce. Open the campaign in Salesforce, copy the 18-character ID from the URL, and paste it here.", { source: "sfdc" })],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 5, status: "blocked", excluded: false,
+    source: { company: "Acme Demo Co", first_name: "Ada", last_name: "Example", email: "ADA@acme.example", campaign_id: CAMPAIGN_A, campaign_status: "Attended", lead_source: "Marketing: Events" },
+    processed: { company: "Acme Demo Co", first_name: "Ada", last_name: "Example", email: "ada@acme.example", campaign_id: CAMPAIGN_A, campaign_status: "Attended", lead_source: "Marketing: Events", campaign_name: "Demo Conference 2026" },
+    provenance: { email: "normalized" },
+    issues: [issue("DUPLICATE_IN_FILE", "blocking", "email", "ada@acme.example appears 2 times for the same campaign (first on row 2). Only the first row will be sent unless you choose otherwise.", { suggestion: { first_row_id: 2 } })],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 6, status: "blocked", excluded: false,
+    source: { company: "asdf", first_name: "Test", last_name: "Test", email: "test@umbrella.example", campaign_id: CAMPAIGN_A, campaign_status: "Attended", lead_source: "Marketing: Events" },
+    processed: { company: "asdf", first_name: "Test", last_name: "Test", email: "test@umbrella.example", campaign_id: CAMPAIGN_A, campaign_status: "Attended", lead_source: "Marketing: Events", campaign_name: "Demo Conference 2026" },
+    provenance: {},
+    issues: [
+      issue("VALUE_JUNK", "blocking", "company", "Company 'asdf' looks like junk, not real lead data. Fix it, exclude the row, or clear this flag if it's genuine.", { source: "ai", suggestion: { reason: "keyboard_mash", confidence: 0.95 } }),
+      issue("VALUE_SUSPECT", "warning", "first_name", "First name 'Test' looks like a placeholder or test value. "),
+    ],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 7, status: "blocked", excluded: false,
+    source: { company: "Hooli Example", first_name: "Linus", last_name: "Sample", email: "linus@hooli.example", campaign_id: CAMPAIGN_B, campaign_status: "Atended", lead_source: "Webcast" },
+    processed: { company: "Hooli Example", first_name: "Linus", last_name: "Sample", email: "linus@hooli.example", campaign_id: CAMPAIGN_B, campaign_status: "Atended", lead_source: "Webcast", campaign_name: "Demo Webinar Series" },
+    provenance: {},
+    issues: [
+      issue("LEAD_SOURCE_SUGGESTED", "blocking", "lead_source", "We think 'Webcast' means 'Marketing: Webinar' (80% sure). Accept or pick another.", { source: "ai", suggestion: { value: "Marketing: Webinar", confidence: 0.8 } }),
+      issue("STATUS_INVALID", "blocking", "campaign_status", "'Atended' isn't a member status on Demo Webinar Series. Valid statuses: Registered, Attended, Watched On Demand.", { source: "sfdc", suggestion: { options: ["Attended", "Registered", "Watched On Demand"] } }),
+    ],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 8, status: "pending_enrichment", excluded: false,
+    source: { company: "", first_name: "Kay", last_name: "Sample", email: "kay@pied.example", campaign_id: CAMPAIGN_A, campaign_status: "Registered", lead_source: "Marketing: Events" },
+    processed: { first_name: "Kay", last_name: "Sample", email: "kay@pied.example", campaign_id: CAMPAIGN_A, campaign_status: "Registered", lead_source: "Marketing: Events", campaign_name: "Demo Conference 2026" },
+    provenance: {},
+    issues: [issue("REQUIRED_MISSING", "blocking", "company", "Company is blank. Enrichment may fill it; if not, fill it in or exclude the row.", { pending: true })],
+    user_edits: [], dismissed: [],
+  },
+  {
+    row_id: 9, status: "warning", excluded: false,
+    source: { company: "Vandelay Demo", first_name: "Art", last_name: "Sample", email: "info@vandelay.example", campaign_id: "701000000000003AAA", campaign_status: "Attended", lead_source: "Marketing: Events", phone: "12345" },
+    processed: { company: "Vandelay Demo", first_name: "Art", last_name: "Sample", email: "info@vandelay.example", campaign_id: "701000000000003AAA", campaign_status: "Attended", lead_source: "Marketing: Events", campaign_name: "Demo Roadshow 2025" },
+    provenance: {},
+    issues: [
+      issue("CAMPAIGN_INACTIVE", "warning", "campaign_id", "Demo Roadshow 2025 is marked inactive in Salesforce. Check it's the right campaign.", { source: "sfdc" }),
+      issue("EMAIL_ROLE_BASED", "warning", "email", "'info@vandelay.example' looks like a shared inbox, not a person. Check it's the right contact."),
+      issue("PHONE_INVALID", "warning", "phone", "'12345' isn't a valid phone number, so it was left blank. Fix it if you can."),
+    ],
+    user_edits: [], dismissed: [],
+  },
+];
+
 export const analysis: Analysis = {
+  state: "ANALYSIS_REVIEW",
+  editable: true,
+  enrich: true,
   summary,
-  enrichment_lookup_count: 5,
+  enrichment_lookup_count: 3,
+  notes: [],
+  normalizer_version: "stand-in-0.1 (NOT lead normalizer v5)",
+  lead_sources: ["Marketing: Events", "Marketing: Webinar", "Marketing: Content Syndication", "Marketing: Paid Social", "Marketing: Website", "Sales: Outbound"],
   issue_groups: [
-    { code: "CAMPAIGN_ID_FORMAT", severity: "blocking", count: 1, explanation: "A campaign ID looks mistyped.", bulk_action: null },
-    { code: "DUPLICATE_IN_FILE", severity: "blocking", count: 1, explanation: "Same email and campaign as an earlier row.", bulk_action: "Exclude duplicate rows" },
-    { code: "STATUS_DEFAULTED", severity: "info", count: 3, explanation: "Blank statuses will use the campaign default.", bulk_action: null },
-    { code: "VALUE_SUSPECT", severity: "warning", count: 1, explanation: "A value looks like a placeholder.", bulk_action: "Exclude all rows flagged as junk" },
-  ],
-  rows: [
-    { row_id: 2, status: "ready", source: { Company: "acme demo co", "E-mail": "ADA@EXAMPLE.COM" }, processed: { company: "Acme Demo Co", email: "ada@example.com" }, issues: [] },
-    { row_id: 3, status: "blocked", source: { Company: "Globex Test", "E-mail": "grace@example.org" }, processed: { company: "Globex Test", email: "grace@example.org" }, issues: [{ field: "campaign_id", severity: "blocking", code: "CAMPAIGN_ID_FORMAT", message: "Campaign ID 701000000000002AAB looks mistyped." }] },
-    { row_id: 4, status: "warning", source: { Company: "asdf", "E-mail": "alan@example.net" }, processed: { company: "asdf", email: "alan@example.net" }, issues: [{ field: "company", severity: "warning", code: "VALUE_SUSPECT", message: "'asdf' looks like a placeholder." }] },
-    { row_id: 5, status: "blocked", source: { Company: "Acme Demo Co", "E-mail": "ada@example.com" }, processed: { company: "Acme Demo Co", email: "ada@example.com" }, issues: [{ field: "email", severity: "blocking", code: "DUPLICATE_IN_FILE", message: "ada@example.com appears 2 times for the same campaign." }] },
-    { row_id: 6, status: "pending_enrichment", source: { Company: "", "E-mail": "kay@example.com" }, processed: { company: "", email: "kay@example.com" }, issues: [{ field: "company", severity: "blocking", code: "REQUIRED_MISSING", message: "Company is blank; enrichment may fill it." }] },
-    { row_id: 7, status: "ready", source: { Company: "Initech Sample", "E-mail": "linus@example.com" }, processed: { company: "Initech Sample", email: "linus@example.com" }, issues: [] },
+    { code: "CAMPAIGN_ID_FORMAT", severity: "blocking", count: 1, explanation: "The campaign ID is mistyped or isn't a campaign ID.", bulk_action: null, bulk_action_label: null },
+    { code: "CAMPAIGN_NOT_FOUND", severity: "blocking", count: 1, explanation: "The campaign ID wasn't found in Salesforce.", bulk_action: null, bulk_action_label: null },
+    { code: "DUPLICATE_IN_FILE", severity: "blocking", count: 1, explanation: "Same email and campaign as an earlier row.", bulk_action: "exclude_duplicates", bulk_action_label: "Exclude duplicate rows" },
+    { code: "VALUE_JUNK", severity: "blocking", count: 1, explanation: "A value looks like junk, not real lead data.", bulk_action: "exclude_junk", bulk_action_label: "Exclude all rows flagged as junk" },
+    { code: "LEAD_SOURCE_SUGGESTED", severity: "blocking", count: 1, explanation: "We suggested a lead source; accept it or pick another.", bulk_action: "accept_lead_source_suggestions", bulk_action_label: "Accept all suggested lead sources at 90% or higher" },
+    { code: "STATUS_INVALID", severity: "blocking", count: 1, explanation: "The status isn't one of the campaign's member statuses.", bulk_action: "set_status", bulk_action_label: "Apply a status to all rows with this value" },
+    { code: "REQUIRED_MISSING", severity: "blocking", count: 1, explanation: "A required field is blank.", bulk_action: null, bulk_action_label: null },
+    { code: "CAMPAIGN_INACTIVE", severity: "warning", count: 1, explanation: "The campaign is inactive in Salesforce.", bulk_action: null, bulk_action_label: null },
+    { code: "STATUS_DEFAULTED", severity: "info", count: 1, explanation: "Blank statuses will use the campaign's default.", bulk_action: null, bulk_action_label: null },
   ],
   campaigns: [
-    { id: CAMPAIGN_A, found: true, name: "Demo Conference 2026", type: "Marketing: Events", is_active: true, member_statuses: ["Registered", "Attended", "No Show"], row_count: 4 },
-    { id: "701000000000002AAB", found: false, name: null, type: null, is_active: null, member_statuses: [], row_count: 1 },
+    { id: CAMPAIGN_A, found: true, name: "Demo Conference 2026", type: "Marketing: Events", is_active: true, statuses: EVENT_STATUSES, default_status: "Registered", row_count: 4 },
+    { id: CAMPAIGN_B, found: true, name: "Demo Webinar Series", type: "Marketing: Webinar", is_active: true, statuses: ["Registered", "Attended", "Watched On Demand"], default_status: "Registered", row_count: 1 },
+    { id: "701000000000003AAA", found: true, name: "Demo Roadshow 2025", type: "Marketing: Events", is_active: false, statuses: EVENT_STATUSES, default_status: "Registered", row_count: 1 },
+    { id: "701000000000009AAA", found: false, name: null, type: null, is_active: null, statuses: [], default_status: null, row_count: 1 },
   ],
 };
 

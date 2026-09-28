@@ -100,7 +100,9 @@ class Env:
     rows_table: Any
     config: Any
     bedrock: Any
+    workato: Any = None
     parse_requests: list[str] = field(default_factory=list)
+    analysis_requests: list[str] = field(default_factory=list)
 
     def bff_deps(self, **overrides: Any) -> Any:
         from bff.app import BffDeps
@@ -112,9 +114,26 @@ class Env:
             "s3": self.s3,
             "uploads_bucket": UPLOADS_BUCKET,
             "start_parse": self.parse_requests.append,
+            "start_analysis": self.analysis_requests.append,
+            "config": self.config,
+            "workato": self.workato,
             **overrides,
         }
         return BffDeps(**kwargs)
+
+    def analyze_deps(self, **overrides: Any) -> Any:
+        from tasks.analyze import AnalyzeDeps
+
+        kwargs: dict[str, Any] = {
+            "jobs": self.jobs,
+            "rows": self.rows,
+            "workato": self.workato,
+            "bedrock": self.bedrock,
+            "config": self.config,
+            "today": lambda: "2026-09-28",
+            **overrides,
+        }
+        return AnalyzeDeps(**kwargs)
 
     def parse_deps(self, **overrides: Any) -> Any:
         from tasks.parse_file import ParseDeps
@@ -144,8 +163,10 @@ def env(
     from shared.audit import AuditWriter
     from shared.bedrock_client import FakeBedrockClient
     from shared.config_store import ConfigStore
+    from shared.fake_sfdc import CAMPAIGNS
     from shared.jobs import JobRepo
     from shared.rows import RowRepo
+    from shared.workato_client import FakeWorkatoClient
 
     audit = AuditWriter(AUDIT_TABLE, env="dev", app_version="t")
     return Env(
@@ -159,6 +180,7 @@ def env(
         config=ConfigStore(CONFIG_TABLE),
         # No AI suggestions unless a test queues some.
         bedrock=FakeBedrockClient(default='{"items": []}'),
+        workato=FakeWorkatoClient(env="dev", campaigns=dict(CAMPAIGNS)),
     )
 
 

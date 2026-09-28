@@ -191,6 +191,10 @@ class AuditWriter:
         self._table = (dynamodb_resource or boto3.resource("dynamodb")).Table(self._table_name)
         self._client = self._table.meta.client
 
+    @property
+    def app_version(self) -> str:
+        return self._app_version
+
     def write(self, event: AuditEvent) -> AuditEvent:
         item = event.to_item(env=self._env, app_version=self._app_version)
         try:

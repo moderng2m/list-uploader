@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import boto3
@@ -19,8 +19,13 @@ from aws_lambda_powertools.event_handler.exceptions import (
 from bff.auth import User, user_from_event
 from shared import config_defaults, messages
 from shared.audit import AuditEvent, AuditWriteError, AuditWriter, EventType, StateConflict
+from shared.config_store import ConfigStore
+from shared.fake_sfdc import CAMPAIGNS
+from shared.ids import new_ulid
 from shared.jobs import InvalidTransition, JobRepo
+from shared.normalizer import Normalizer, load_normalizer
 from shared.rows import RowRepo
+from shared.workato_client import FakeWorkatoClient, WorkatoClient
 
 app = APIGatewayHttpResolver()
 
@@ -33,6 +38,11 @@ class BffDeps:
     uploads_bucket: str
     start_parse: Callable[[str], None]
     rows: RowRepo
+    start_analysis: Callable[[str], None]
+    config: ConfigStore
+    workato: WorkatoClient
+    normalizer: Normalizer = field(default_factory=load_normalizer)
+    bedrock_model_id: str = "fake-heuristic"
     raw_file_retention_days: int = 90
     max_bytes: int = config_defaults.LIMITS["max_file_bytes"]
 
@@ -49,7 +59,23 @@ class BffDeps:
                 Payload=json.dumps({"job_id": job_id}).encode(),
             )
 
+        sfn = boto3.client("stepfunctions")
+        analyze_arn = os.environ["ANALYZE_STATE_MACHINE"]
+
+        def start_analysis(job_id: str) -> None:
+            sfn.start_execution(
+                stateMachineArn=analyze_arn,
+                name=f"{job_id}-{new_ulid()}",
+                input=json.dumps({"job_id": job_id}),
+            )
+
+        if os.environ.get("INTEGRATIONS", "fake") != "fake":
+            raise RuntimeError("only INTEGRATIONS=fake is wired up in this build")
         return cls(
+            start_analysis=start_analysis,
+            config=ConfigStore(),
+            workato=FakeWorkatoClient(env=os.environ.get("ENV", "dev"), campaigns=dict(CAMPAIGNS)),
+            bedrock_model_id=os.environ.get("BEDROCK_MODEL_ID", "fake-heuristic"),
             audit=audit,
             jobs=JobRepo(audit),
             s3=boto3.client("s3"),

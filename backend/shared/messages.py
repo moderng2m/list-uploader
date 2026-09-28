@@ -78,3 +78,62 @@ MAPPING_LOCKED = (
     "The mapping for this upload is already confirmed and analysis has started, so it can't "
     "be changed."
 )
+
+# --- Analysis issues (SPEC §9) ---
+REQUIRED_MISSING = "{field} is blank. Fill it in, or exclude this row."
+REQUIRED_PENDING = (
+    "{field} is blank. Enrichment may fill it; if not, fill it in or exclude the row."
+)
+EMAIL_INVALID = "'{value}' isn't a valid email address. Fix it, or exclude this row."
+EMAIL_ROLE_BASED = (
+    "'{value}' looks like a shared inbox, not a person. Check it's the right contact."
+)
+EMAIL_PUBLIC_DOMAIN = (
+    "'{value}' is a personal email address. A work address is better if you have it."
+)
+NAME_CHANGED = "{field} had numbers or symbols removed: '{before}' became '{after}'."
+PHONE_INVALID = "'{value}' isn't a valid phone number, so it was left blank. Fix it if you can."
+COUNTRY_UNRECOGNIZED = "'{value}' isn't a country we recognize. Check the spelling."
+CAMPAIGN_ID_FORMAT = (
+    "Campaign ID '{id}' isn't a Salesforce campaign ID. Campaign IDs are 15 or 18 characters "
+    "and start with 701; copy it from the campaign's URL in Salesforce."
+)
+CAMPAIGN_INACTIVE = "{campaign} is marked inactive in Salesforce. Check it's the right campaign."
+CAMPAIGN_NAME_MISMATCH = (
+    "The file says '{supplied}', but Salesforce calls this campaign '{actual}'. "
+    "The Salesforce name will be used."
+)
+LEAD_SOURCE_INVALID = "'{value}' isn't a lead source we recognize. Choose one from the list."
+LEAD_SOURCE_CAMPAIGN_MISMATCH = (
+    "Lead source '{value}' doesn't match this campaign's type, '{campaign_type}'. Check it's right."
+)
+FIELD_FORMAT_INVALID = "{field} value '{value}' isn't in a format we can use, so it was left blank."
+VALUE_SUSPECT = "{field} '{value}' looks like a placeholder or test value. {explanation}"
+VALUE_JUNK = (
+    "{field} '{value}' looks like junk, not real lead data. Fix it, exclude the row, or clear "
+    "this flag if it's genuine."
+)
+ZIP_LEADING_ZERO_RESTORED = (
+    "ZIP code '{before}' was padded to '{after}' (Excel drops leading zeros)."
+)
+NOT_SENT_FIELD = (
+    "These fields have values but aren't sent to Eloqua yet (kept in the processed file): {fields}."
+)
+AUTO_LIST_NAME = "SFDC List Name was blank, so it was set to '{value}'."
+ANALYSIS_AI_UNAVAILABLE = (
+    "Automatic junk checks weren't available for some rows. Rule-based checks still ran; "
+    "look over names and companies before you send."
+)
+ANALYSIS_NOT_READY = "This upload hasn't been analyzed yet."
+ANALYSIS_NEEDS_MAPPING = "Confirm the column mapping before starting analysis."
+ROW_NOT_EDITABLE = "Rows can only be changed while you're reviewing the analysis."
+STATUS_DEFAULTED_ROW = "Status was blank, so this campaign's default, '{default}', will be used."
+LEAD_SOURCE_AUTO_CORRECTED_ROW = "Lead source '{from_}' was changed to '{to}'."
+DUPLICATE_ROW = (
+    "{email} appears {n} times for the same campaign (first on row {first}). Only the first "
+    "row will be sent unless you choose otherwise."
+)
+ANALYSIS_FAILED = (
+    "Something went wrong while analyzing this file. Your mapping is saved; try running the "
+    "analysis again. If it keeps happening, contact Marketing Tech Ops."
+)

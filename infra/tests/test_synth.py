@@ -213,3 +213,24 @@ def test_prod_parse_task_can_call_bedrock() -> None:
     api_json = Template.from_stack(built["api"]).to_json()  # type: ignore[arg-type]
     actions = {a for s in _statements(api_json) for a in _as_list(s["Action"])}
     assert "bedrock:InvokeModel" in actions
+
+
+def test_analyze_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    analyze = next(m for lid, m in machines.items() if lid.startswith("AnalyzeWorkflow"))
+    definition = json.dumps(analyze["Properties"]["DefinitionString"])
+    for state in ("Prepare", "JunkChecks", "Finalize", "MarkFailed", "AnalysisFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":4' in definition
+    template.has_resource_properties(
+        "AWS::Lambda::Function", {"Handler": "tasks.analyze.handler", "Timeout": 600}
+    )
+
+
+def test_bff_can_start_analysis_and_use_transactions(stacks: dict[str, Stack]) -> None:
+    api_json = Template.from_stack(stacks["api"]).to_json()
+    actions = {a for s in _statements(api_json) if s["Effect"] == "Allow"
+               for a in _as_list(s["Action"])}  # fmt: skip
+    assert "states:StartExecution" in actions
+    assert "dynamodb:ConditionCheckItem" in actions

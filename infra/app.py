@@ -19,8 +19,10 @@ def build(app: App, cfg: EnvConfig, *, deploy_web_assets: bool = True) -> dict[s
     prefix = f"ListUploader-{cfg.name}"
     storage = StorageStack(app, f"{prefix}-Storage", cfg=cfg, env=env)
     auth = AuthStack(app, f"{prefix}-Auth", cfg=cfg, env=env)
-    api = ApiStack(app, f"{prefix}-Api", cfg=cfg, storage=storage, auth=auth, env=env)
-    workflows = WorkflowsStack(app, f"{prefix}-Workflows", cfg=cfg, env=env)
+    workflows = WorkflowsStack(app, f"{prefix}-Workflows", cfg=cfg, storage=storage, env=env)
+    api = ApiStack(
+        app, f"{prefix}-Api", cfg=cfg, storage=storage, auth=auth, workflows=workflows, env=env
+    )
     web = WebStack(app, f"{prefix}-Web", cfg=cfg, deploy_assets=deploy_web_assets, env=env)
     Tags.of(app).add("app", "list-uploader")
     Tags.of(app).add("env", cfg.name)

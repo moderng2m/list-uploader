@@ -86,7 +86,7 @@ class TestGet:
         # No prompt or response content, and no sample values, in the audit trail.
         assert "Acme" not in json.dumps(invocation)
         suggested = _events(app_env, job_id, "MAPPING_SUGGESTED")[0]["details"]
-        assert "ada@example.com" not in json.dumps(suggested)
+        assert "ada@acme.example" not in json.dumps(suggested)
 
     def test_degraded_ai_shows_a_note(self, app_env: Env) -> None:
         app_env.bedrock.queue("junk", "junk")

@@ -15,6 +15,7 @@ from infra.config import EnvConfig
 from infra.lambda_code import ARCH, RUNTIME, backend_code
 from infra.stacks.auth import AuthStack
 from infra.stacks.storage import StorageStack, grant_audit_append
+from infra.stacks.workflows import WorkflowsStack
 
 
 class ApiStack(Stack):
@@ -26,6 +27,7 @@ class ApiStack(Stack):
         cfg: EnvConfig,
         storage: StorageStack,
         auth: AuthStack,
+        workflows: WorkflowsStack,
         **kwargs: object,
     ) -> None:
         super().__init__(scope, cid, **kwargs)  # type: ignore[arg-type]
@@ -99,7 +101,11 @@ class ApiStack(Stack):
         self.bff = function(
             "Bff",
             "bff.handler.handler",
-            environment={**common_env, "PARSE_FUNCTION": self.parse_task.function_name},
+            environment={
+                **common_env,
+                "PARSE_FUNCTION": self.parse_task.function_name,
+                "ANALYZE_STATE_MACHINE": workflows.state_machines["Analyze"].state_machine_arn,
+            },
         )
         for table in (storage.jobs, storage.rows, storage.config_table):
             table.grant_read_write_data(self.bff)
@@ -116,6 +122,7 @@ class ApiStack(Stack):
         grant_audit_append(self.bff.role, storage.audit_events)  # type: ignore[arg-type]
         storage.key.grant_encrypt_decrypt(self.bff)
         self.parse_task.grant_invoke(self.bff)
+        workflows.state_machines["Analyze"].grant_start_execution(self.bff)
 
         authorizer = authorizers.HttpUserPoolAuthorizer(
             "Jwt", auth.user_pool, user_pool_clients=[auth.client]

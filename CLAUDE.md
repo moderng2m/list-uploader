@@ -10,7 +10,9 @@ This repo and the AWS account it deploys to (`brandonkeithfarris`, a personal
 account) are a **build environment**, not TriNet's. See SPEC decision D15.
 
 - No real lead data anywhere: not in fixtures, tests, the frontend mocks, S3, or
-  DynamoDB. Use obviously fake values (`example.com`, "Demo Conference 2026").
+  DynamoDB. Use obviously fake values: reserved `.example` domains for lead emails
+  (`ada@acme.example`), "Demo Conference 2026". Don't use `example.com`/`test.com`
+  for leads: the junk rules (SPEC §14.2) flag those domains on purpose.
 - No real Workato endpoints or tokens. `FakeWorkatoClient` is the only Workato
   implementation that runs here (`INTEGRATIONS=fake`).
 - `send_to_prod` must be `false` outside `prod`. `BaseWorkatoClient` raises before
@@ -34,13 +36,20 @@ backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
     mapping.py           exact -> alias -> AI column mapping; confirmation rules
     config_store.py      Config table reads (aliases, thresholds) with seed fallback
     fake_ai.py           HeuristicFakeBedrock: the "AI" in dev (INTEGRATIONS=fake)
+    sfdc_ids.py          campaign ID checks, 15 -> 18 checksum (SPEC §11.3)
+    normalizer.py        Normalizer protocol, v5 adapter, stand-in; §11.2 field rules
+    analysis.py          evaluate_row (pure): processed, provenance, issues, status
+    analysis_store.py    job context <-> evaluation, per-row audit events
+    ai_checks.py         AI junk detection and lead source matching
+    issue_catalog.py     explanation + bulk action per issue code
+    fake_sfdc.py         synthetic Salesforce campaigns for the fake Workato
     jobs.py              JobState machine; JobRepo (state change + audit in one txn)
     rows.py              Rows table access
     messages.py          all user-facing text (SPEC §20)
     config_defaults.py   thresholds and limits (SPEC §14.4)
     lead_normalizer/     normalizer v5 goes here unmodified (P3)
   bff/                   API Gateway router (Powertools APIGatewayHttpResolver)
-  tasks/                 async task Lambdas (parse_file: parse + suggest mapping)
+  tasks/                 async task Lambdas (parse_file; analyze = AnalyzeWorkflow steps)
   audit_archiver/        AuditEvents stream -> Firehose -> S3 archive
   tests/                 pytest + moto
     fixtures/synthetic/  generated sample files (make fixtures); never real data
@@ -125,9 +134,43 @@ fill (OQ-2, §8 footnote).
 The frontend mock catalog must match `catalog.py`;
 `backend/tests/test_frontend_contract.py` enforces it.
 
+## Analysis (P3)
+
+`POST /jobs/{id}/analyze` stores a reproducibility snapshot on the job
+(ANALYSIS_STARTED) and starts AnalyzeWorkflow: Prepare (Salesforce campaign
+lookup via Workato, lead source rules then AI) -> Map of junk-check batches
+(100 rows, 4 in parallel) -> Finalize (evaluate every row, duplicates, write rows
+and audit events, -> ANALYSIS_REVIEW). Any step failing -> FAILED, and the user can
+re-run. `tasks.analyze.run_all` runs the same steps in-process for tests.
+
+`shared.analysis.evaluate_row` is the single source of truth for a row. Row edits
+(`PATCH /rows/{id}`) and bulk actions re-run it with the job's stored context, then
+re-check duplicates across the file, and write each changed row with its audit
+events in one transaction conditioned on the job still being in ANALYSIS_REVIEW.
+
+Normalizer: `load_normalizer()` uses v5 from `shared/lead_normalizer/` once it's
+added (a `main(inputs)` function), else `StandInNormalizer`, which is minimal and
+is labelled as NOT v5 in every snapshot. The golden-output test is skipped until
+v5 and synthetic golden fixtures exist.
+
+Decisions made while building P3 (spec gaps):
+- **Junk AI sees every row.** SPEC §14.2 says the AI pass skips rows already
+  flagged by rules, but VALUE_JUNK needs both an AI flag and a rule hit on the same
+  field, so it could never fire. A rule hit alone or an AI flag alone gives
+  VALUE_SUSPECT (warning); both, with AI >= junk_block_threshold, give VALUE_JUNK.
+- **Audit events are per row, not per field**: one VALUE_NORMALIZED /
+  VALUE_DERIVED / VALUE_AUTO_CORRECTED / ISSUE_RAISED / ISSUE_CLEARED per row,
+  listing the fields. Each carries the lead's email hash for person lookup.
+- Fields derived from the campaign (lead source, status, name, list name) aren't
+  reported missing while the campaign ID itself is invalid.
+- NOT_SENT_FIELD is one info issue per row listing every unsent field (OQ-1).
+- FIELD_FORMAT_INVALID (warning) is new: SPEC §11.2 values that can't be used.
+- The lead source list is a placeholder until admins maintain it (P6).
+
 ## Phase status
 
 - P0 scaffold: done.
 - P1 upload and parse: done.
 - P2 column mapping: done.
-- Next: P3 (analysis). Needs the lead normalizer v5 from Brandon.
+- P3 analysis: done except the golden-output test (needs normalizer v5).
+- Next: P4 (enrichment).

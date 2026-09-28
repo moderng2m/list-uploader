@@ -42,6 +42,7 @@ function MappingEditor({ jobId, mapping }: { jobId: string; mapping: Mapping }) 
         jobId,
         columns.map((c) => ({ source_header: c.source_header, field_key: c.field_key })),
       );
+      await api.startAnalysis(jobId);
       navigate(`/jobs/${jobId}/analysis`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

@@ -1,6 +1,10 @@
 import type {
   AdminConfig,
   Analysis,
+  BulkAction,
+  Row,
+  RowChange,
+  RowsPage,
   CreatedJob,
   Enrichment,
   GateResult,
@@ -48,7 +52,23 @@ export const api = {
   getMapping: (id: string) => request<Mapping>(`/jobs/${id}/mapping`),
   confirmMapping: (id: string, columns: { source_header: string; field_key: string | null }[]) =>
     request<Mapping>(`/jobs/${id}/mapping`, { method: "PUT", body: JSON.stringify({ columns }) }),
+  startAnalysis: (id: string) => request<{ job_id: string; state: string }>(`/jobs/${id}/analyze`, { method: "POST" }),
   getAnalysis: (id: string) => request<Analysis>(`/jobs/${id}/analysis`),
+  getRows: (id: string, filters: Record<string, string | number | undefined> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== "") q.set(k, String(v));
+    return request<RowsPage>(`/jobs/${id}/rows?${q.toString()}`);
+  },
+  editRow: (id: string, rowId: number, change: RowChange) =>
+    request<{ row: Row; also_changed: number[] }>(`/jobs/${id}/rows/${rowId}`, {
+      method: "PATCH",
+      body: JSON.stringify(change),
+    }),
+  bulkAction: (id: string, action: BulkAction, params: Record<string, unknown> = {}) =>
+    request<{ action: string; affected_row_ids: number[] }>(`/jobs/${id}/bulk-actions`, {
+      method: "POST",
+      body: JSON.stringify({ action, params }),
+    }),
   getEnrichment: (id: string) => request<Enrichment>(`/jobs/${id}/enrichment`),
   getGate: (id: string) => request<GateResult>(`/jobs/${id}/gate`),
   getResult: (id: string) => request<SendResult>(`/jobs/${id}/result`),

@@ -17,6 +17,7 @@ from shared.catalog import SEED_ALIASES, normalize_header
 from shared.jobs import plain
 
 ALIASES_PK = "field_aliases"
+LEAD_SOURCES_PK = "lead_sources"
 THRESHOLDS_PK = "thresholds"
 CURRENT = "current"
 
@@ -36,6 +37,23 @@ class AliasSet:
 
 
 SEED_ALIAS_SET = AliasSet(version="seed", by_field=dict(SEED_ALIASES))
+
+# Placeholder list until an admin maintains the real one (P6). Illustrative
+# values only; TriNet's actual picklist is not in this repo.
+SEED_LEAD_SOURCES: tuple[str, ...] = (
+    "Marketing: Events",
+    "Marketing: Webinar",
+    "Marketing: Content Syndication",
+    "Marketing: Paid Social",
+    "Marketing: Website",
+    "Sales: Outbound",
+)
+
+
+@dataclass(frozen=True)
+class LeadSourceList:
+    version: str
+    active: tuple[str, ...]
 
 
 class ConfigStore:
@@ -58,6 +76,17 @@ class ConfigStore:
         return AliasSet(
             version=str(item.get("version", "unknown")),
             by_field={k: tuple(v) for k, v in item.get("aliases", {}).items()},
+        )
+
+    def lead_sources(self) -> LeadSourceList:
+        item = self._get(LEAD_SOURCES_PK)
+        if not item:
+            return LeadSourceList(version="seed", active=SEED_LEAD_SOURCES)
+        values = [v for v in item.get("values", []) if v.get("active", True)]
+        values.sort(key=lambda v: v.get("order", 0))
+        return LeadSourceList(
+            version=str(item.get("version", "unknown")),
+            active=tuple(str(v["value"]) for v in values),
         )
 
     def thresholds(self) -> dict[str, float]:

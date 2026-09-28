@@ -114,3 +114,22 @@ def normalize_header(text: str) -> str:
     """SPEC §10.1: lowercase, trim, collapse whitespace, strip punctuation except '-'."""
     text = _PUNCT.sub(" ", text.lower()).replace("_", " ")
     return _SPACE.sub(" ", text).strip()
+
+
+# Fields with no confirmed Post to Eloqua destination (SPEC §8 "confirm (OQ-1)").
+# Until OQ-1 is resolved they stay in the processed file but are not sent, and
+# rows with a value get a NOT_SENT_FIELD info issue.
+NOT_SENT_KEYS: frozenset[str] = frozenset(
+    {
+        "mobile_phone",
+        "notes",
+        "zi_contact_id",
+        "zi_company_id",
+        "naics_code",
+        "industry",
+        "website",
+        "employee_count",
+        "list_name",
+        "last_response_class",
+    }
+)

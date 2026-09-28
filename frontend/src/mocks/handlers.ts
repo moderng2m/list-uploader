@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { API_BASE } from "../api/client";
-import type { Job } from "../api/types";
+import type { BulkAction, Job, RowChange } from "../api/types";
+import { mockAnalysis, mockBulk, mockEdit, mockRows, resetAnalysisMock } from "./analysisMock";
 import * as f from "./fixtures";
 
 const u = (path: string) => `${API_BASE}${path}`;
@@ -11,17 +12,28 @@ export const MOCK_UPLOAD_URL = "https://uploads.mock.invalid/";
 const created = new Map<string, Job>();
 let counter = 0;
 
+// Jobs whose analysis has been started in this session (done on the next poll).
+const analyzing = new Set<string>();
+
 export function resetMockJobs() {
   created.clear();
+  analyzing.clear();
   counter = 0;
+  resetAnalysisMock();
 }
 
 function findJob(id: string): Job | undefined {
   return created.get(id) ?? f.jobs.find((j) => j.job_id === id);
 }
 
-/** Simulate the async parse finishing the first time the job is polled. */
+/** Simulate async work (parse, analysis) finishing the first time the job is polled. */
 function advance(job: Job): Job {
+  if (job.state === "ANALYZING") {
+    const done: Job = { ...job, state: "ANALYSIS_REVIEW", summary: mockAnalysis().summary };
+    if (created.has(job.job_id)) created.set(job.job_id, done);
+    analyzing.delete(job.job_id);
+    return done;
+  }
   if (job.state !== "UPLOADED") return job;
   const next: Job = job.filename.toLowerCase().includes("broken")
     ? {
@@ -71,7 +83,9 @@ export const handlers = [
     return HttpResponse.json(next, { status: 202 });
   }),
   http.get(u("/jobs/:id"), ({ params }) => {
-    const job = findJob(String(params.id));
+    const id = String(params.id);
+    const found = findJob(id);
+    const job = found && analyzing.has(id) ? { ...found, state: "ANALYZING" as const } : found;
     return job
       ? HttpResponse.json(advance(job))
       : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
@@ -88,7 +102,23 @@ export const handlers = [
       );
     return HttpResponse.json({ ...f.mapping, confirmed: true, confirmed_at: new Date().toISOString() });
   }),
-  http.get(u("/jobs/:id/analysis"), () => HttpResponse.json(f.analysis)),
+  http.post(u("/jobs/:id/analyze"), ({ params }) => {
+    const id = String(params.id);
+    analyzing.add(id);
+    const job = created.get(id);
+    if (job) created.set(id, { ...job, state: "ANALYZING" });
+    return HttpResponse.json({ job_id: id, state: "ANALYZING" }, { status: 202 });
+  }),
+  http.get(u("/jobs/:id/analysis"), () => HttpResponse.json(mockAnalysis())),
+  http.get(u("/jobs/:id/rows"), ({ request }) => HttpResponse.json(mockRows(new URL(request.url).searchParams))),
+  http.patch(u("/jobs/:id/rows/:rowId"), async ({ params, request }) => {
+    const result = mockEdit(Number(params.rowId), (await request.json()) as RowChange);
+    return result ? HttpResponse.json(result) : HttpResponse.json({ message: "Row not found." }, { status: 404 });
+  }),
+  http.post(u("/jobs/:id/bulk-actions"), async ({ request }) => {
+    const body = (await request.json()) as { action: BulkAction; params: Record<string, unknown> };
+    return HttpResponse.json(mockBulk(body.action, body.params ?? {}));
+  }),
   http.get(u("/jobs/:id/enrichment"), () => HttpResponse.json(f.enrichment)),
   http.get(u("/jobs/:id/gate"), () => HttpResponse.json(f.gate)),
   http.get(u("/jobs/:id/result"), () => HttpResponse.json(f.result)),
