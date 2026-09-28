@@ -8,6 +8,7 @@ import type {
   LeadSource,
   Mapping,
   Me,
+  ParseSummary,
   SendResult,
 } from "../api/types";
 
@@ -26,6 +27,26 @@ const summary = {
   rows_pending_enrichment: 1,
 };
 
+export const demoParse: ParseSummary = {
+  file_type: "xlsx",
+  sheet_name: "Sheet1",
+  encoding: null,
+  delimiter: null,
+  headers: ["Company", "First name", "Last Name", "E-mail", "Job Position", "SFDC Last Campaign ID", "Badge Color"],
+  row_count: 6,
+  column_count: 7,
+  warnings: [
+    {
+      code: "EXCEL_ERROR_VALUE",
+      severity: "warning",
+      message: "Cell E2 contained the Excel error #VALUE!; it was left blank.",
+      row_id: 2,
+      column: "Job Position",
+    },
+  ],
+  row_issue_count: 0,
+};
+
 export const jobs: Job[] = [
   {
     job_id: DEMO_JOB_ID,
@@ -36,6 +57,7 @@ export const jobs: Job[] = [
     created_at: "2026-09-28T15:04:00Z",
     campaigns: ["Demo Conference 2026", "Demo Webinar"],
     summary,
+    parse: demoParse,
   },
   {
     job_id: "j_01JDEMO0000000000000000001",
@@ -46,6 +68,19 @@ export const jobs: Job[] = [
     created_at: "2026-09-21T18:30:00Z",
     campaigns: ["Demo Conference 2026"],
     summary: { ...summary, rows_total: 40, rows_ready: 40, rows_blocked: 0, rows_warning: 0 },
+  },
+  {
+    job_id: "j_01JDEMO0000000000000000002",
+    filename: "empty_export.csv",
+    owner_email: me.email,
+    state: "PARSE_FAILED",
+    enrich: true,
+    created_at: "2026-09-20T13:10:00Z",
+    parse_error: {
+      code: "NO_DATA_ROWS",
+      message:
+        "This file has a header row but no data rows. Add your leads under the headers, then upload it again.",
+    },
   },
 ];
 

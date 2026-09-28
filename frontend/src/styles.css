@@ -140,3 +140,6 @@ select { font: inherit; padding: 0.3rem; max-width: 100%; background: var(--surf
   .mock-banner { padding: 0.4rem 16px; }
 }
 .table-wrap { overflow-x: auto; padding: 0; }
+.small { font-size: 0.85em; }
+.file-details p { margin: 0; }
+.warnings { margin: 0.5rem 0 0; color: var(--warn); }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Mapping, MappingColumn } from "../api/types";
+import type { Job, Mapping, MappingColumn } from "../api/types";
 import { Async, MethodBadge, PageHeader } from "../components/ui";
 import { useApi } from "../components/useApi";
 
@@ -95,14 +95,37 @@ function MappingEditor({ jobId, mapping }: { jobId: string; mapping: Mapping }) 
   );
 }
 
+function FileDetails({ job }: { job: Job }) {
+  const p = job.parse;
+  if (!p) return null;
+  const where = p.file_type === "xlsx" ? `sheet “${p.sheet_name}”` : `${p.encoding} CSV`;
+  return (
+    <section className="card file-details" aria-label="File details">
+      <p>
+        <strong>{job.filename}</strong>: {p.row_count.toLocaleString()} rows and {p.column_count} columns read
+        from {where}.
+      </p>
+      {p.warnings.length > 0 && (
+        <ul className="warnings">
+          {p.warnings.map((w, i) => (
+            <li key={i}>{w.message}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function MappingPage() {
   const { jobId = "" } = useParams();
   const state = useApi(() => api.getMapping(jobId), `mapping:${jobId}`);
+  const job = useApi(() => api.getJob(jobId), `job:${jobId}`);
   return (
     <>
       <PageHeader title="Map your columns">
         Check each column goes to the right field. AI suggestions are highlighted — confirm them before you continue.
       </PageHeader>
+      {job.status === "ready" && <FileDetails job={job.data} />}
       <Async state={state}>{(m) => <MappingEditor jobId={jobId} mapping={m} />}</Async>
     </>
   );

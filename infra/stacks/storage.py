@@ -52,14 +52,13 @@ class StorageStack(Stack):
             "removal_policy": RemovalPolicy.RETAIN,
         }
 
-        # Raw uploads are write-once: every version is Object-Locked for its retention.
+        # Raw uploads are write-once. Object Lock is on, but with no default retention:
+        # S3 would then demand a Content-MD5 on every browser upload. Instead the BFF
+        # locks the exact version it will parse (put_object_retention) at confirm time.
         self.uploads = s3.Bucket(
             self,
             "Uploads",
             object_lock_enabled=True,
-            object_lock_default_retention=s3.ObjectLockRetention.governance(
-                Duration.days(cfg.raw_file_retention_days)
-            ),
             lifecycle_rules=[
                 s3.LifecycleRule(
                     expiration=Duration.days(cfg.raw_file_retention_days),
@@ -69,7 +68,7 @@ class StorageStack(Stack):
             ],
             cors=[
                 s3.CorsRule(
-                    allowed_methods=[s3.HttpMethods.PUT],
+                    allowed_methods=[s3.HttpMethods.POST],  # presigned POST
                     allowed_origins=["*"],  # narrowed to the CloudFront origin in P7
                     allowed_headers=["*"],
                     max_age=3000,

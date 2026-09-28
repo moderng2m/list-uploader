@@ -97,3 +97,11 @@ def test_event_ids_sort_by_time() -> None:
 
     assert new_ulid(1_000) < new_ulid(2_000)
     assert len(new_ulid()) == 26
+
+
+def test_ulids_are_monotonic_within_a_millisecond() -> None:
+    from shared.ids import new_ulid
+
+    ids = [new_ulid() for _ in range(2000)]
+    assert ids == sorted(ids)
+    assert len(set(ids)) == len(ids)

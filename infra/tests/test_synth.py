@@ -152,3 +152,36 @@ def test_three_state_machines(stacks: dict[str, Stack]) -> None:
     Template.from_stack(stacks["workflows"]).resource_count_is(
         "AWS::StepFunctions::StateMachine", 3
     )
+
+
+def test_uploads_bucket_is_object_locked_without_default_retention(
+    stacks: dict[str, Stack],
+) -> None:
+    buckets = Template.from_stack(stacks["storage"]).find_resources("AWS::S3::Bucket")
+    uploads = [b for lid, b in buckets.items() if lid.startswith("Uploads")]
+    assert len(uploads) == 1
+    props = uploads[0]["Properties"]
+    assert props["ObjectLockEnabled"] is True
+    assert "Rule" not in props.get("ObjectLockConfiguration", {})
+    assert props["CorsConfiguration"]["CorsRules"][0]["AllowedMethods"] == ["POST"]
+
+
+def test_parse_task_wiring(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["api"])
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {"Handler": "tasks.parse_file.handler", "Timeout": 300, "MemorySize": 2048},
+    )
+    template.has_resource_properties("AWS::Lambda::EventInvokeConfig", {"MaximumRetryAttempts": 0})
+    bff = template.find_resources(
+        "AWS::Lambda::Function", {"Properties": {"Handler": "bff.handler.handler"}}
+    )
+    (bff_props,) = [r["Properties"] for r in bff.values()]
+    assert "PARSE_FUNCTION" in bff_props["Environment"]["Variables"]
+    actions = {
+        a
+        for stmt in _statements(template.to_json())
+        if stmt["Effect"] == "Allow"
+        for a in _as_list(stmt["Action"])
+    }
+    assert {"lambda:InvokeFunction", "s3:PutObjectRetention"} <= actions

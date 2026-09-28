@@ -12,13 +12,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, TypeVar
 
 import boto3
+from botocore.exceptions import ClientError
 
 from shared.ids import new_ulid
 from shared.observability import env_name, logger, metrics
@@ -147,6 +150,32 @@ class AuditWriteError(RuntimeError):
     """The audit event could not be recorded; the calling action must fail."""
 
 
+class StateConflict(RuntimeError):
+    """A conditional write alongside the audit events failed (e.g. the job moved on)."""
+
+
+_AUDIT_CONDITION = "attribute_not_exists(job_id) AND attribute_not_exists(sk)"
+
+
+def to_dynamo(value: Any) -> Any:
+    """Floats -> Decimal, recursively (DynamoDB rejects floats)."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: to_dynamo(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [to_dynamo(v) for v in value]
+    return value
+
+
+def _cancellation_codes(exc: ClientError) -> list[str]:
+    reasons = exc.response.get("CancellationReasons")
+    if reasons:
+        return [str(r.get("Code", "None")) for r in reasons]
+    match = re.search(r"\[([^\]]*)\]", str(exc))
+    return [c.strip() for c in match.group(1).split(",")] if match else []
+
+
 class AuditWriter:
     def __init__(
         self,
@@ -154,33 +183,65 @@ class AuditWriter:
         *,
         env: str | None = None,
         app_version: str | None = None,
-        dynamodb_client: Any | None = None,
+        dynamodb_resource: Any | None = None,
     ) -> None:
         self._table_name = table_name or os.environ["AUDIT_TABLE"]
         self._env = env or env_name()
         self._app_version = app_version or os.environ.get("APP_VERSION", "0.0.0+local")
-        self._table = (dynamodb_client or boto3.resource("dynamodb")).Table(self._table_name)
+        self._table = (dynamodb_resource or boto3.resource("dynamodb")).Table(self._table_name)
+        self._client = self._table.meta.client
 
     def write(self, event: AuditEvent) -> AuditEvent:
         item = event.to_item(env=self._env, app_version=self._app_version)
         try:
-            self._table.put_item(
-                Item=item,
-                ConditionExpression="attribute_not_exists(job_id) AND attribute_not_exists(sk)",
-            )
+            self._table.put_item(Item=item, ConditionExpression=_AUDIT_CONDITION)
         except Exception as exc:
-            metrics.add_metric(name="AuditWriteFailures", unit="Count", value=1)
-            logger.error(
-                "audit write failed",
-                extra={
-                    "event": str(event.event_type),
-                    "job_id": event.job_id,
-                    "row_id": event.row_id,
-                    "error_type": type(exc).__name__,
-                },
-            )
-            raise AuditWriteError(f"audit write failed for {event.event_type}") from exc
+            raise self._failed([event], exc) from exc
         return event
+
+    def transact(self, events: Sequence[AuditEvent], writes: Sequence[dict[str, Any]] = ()) -> None:
+        """Write audit events and other changes atomically: all happen or none do.
+
+        `writes` are TransactWriteItems operations with plain Python values, e.g.
+        `{"Update": {"TableName": ..., "Key": {...}, "UpdateExpression": ...}}`.
+        Raises `StateConflict` if one of `writes` fails its condition, otherwise
+        `AuditWriteError` on any failure.
+        """
+        audit_ops = [
+            {
+                "Put": {
+                    "TableName": self._table_name,
+                    "Item": e.to_item(env=self._env, app_version=self._app_version),
+                    "ConditionExpression": _AUDIT_CONDITION,
+                }
+            }
+            for e in events
+        ]
+        # The resource-backed client serializes plain Python values itself.
+        ops = to_dynamo([*audit_ops, *writes])
+        try:
+            self._client.transact_write_items(TransactItems=ops)
+        except ClientError as exc:
+            codes = _cancellation_codes(exc)
+            if any(c == "ConditionalCheckFailed" for c in codes[len(events) :]):
+                raise StateConflict("a conditional write failed") from exc
+            raise self._failed(events, exc) from exc
+        except Exception as exc:
+            raise self._failed(events, exc) from exc
+
+    def _failed(self, events: Sequence[AuditEvent], exc: Exception) -> AuditWriteError:
+        metrics.add_metric(name="AuditWriteFailures", unit="Count", value=1)
+        logger.error(
+            "audit write failed",
+            extra={
+                "event": ",".join(str(e.event_type) for e in events),
+                "job_id": events[0].job_id if events else None,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return AuditWriteError(
+            f"audit write failed for {','.join(str(e.event_type) for e in events)}"
+        )
 
 
 def run_audited(writer: AuditWriter, event: AuditEvent, action: Callable[[], T]) -> T:

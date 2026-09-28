@@ -1,6 +1,7 @@
 // Shapes returned by the BFF (SPEC §19). Only what the screens need so far.
 
 export type JobState =
+  | "AWAITING_UPLOAD"
   | "UPLOADED"
   | "PARSE_FAILED"
   | "MAPPING_REVIEW"
@@ -34,6 +35,26 @@ export interface JobSummary {
   rows_pending_enrichment: number;
 }
 
+export interface ParseWarning {
+  code: string;
+  severity: Severity;
+  message: string;
+  row_id?: number;
+  column?: string;
+}
+
+export interface ParseSummary {
+  file_type: "csv" | "xlsx";
+  sheet_name: string | null;
+  encoding: string | null;
+  delimiter: string | null;
+  headers: string[];
+  row_count: number;
+  column_count: number;
+  warnings: ParseWarning[];
+  row_issue_count: number;
+}
+
 export interface Job {
   job_id: string;
   filename: string;
@@ -41,8 +62,19 @@ export interface Job {
   state: JobState;
   enrich: boolean;
   created_at: string;
-  campaigns: string[];
-  summary: JobSummary;
+  updated_at?: string;
+  file?: { size?: number; sha256?: string; version_id?: string };
+  parse?: ParseSummary;
+  parse_error?: { code: string; message: string };
+  // Filled in by later phases.
+  campaigns?: string[];
+  summary?: JobSummary;
+}
+
+export interface CreatedJob {
+  job: Job;
+  upload: { url: string; fields: Record<string, string> };
+  max_bytes: number;
 }
 
 export interface CatalogField {

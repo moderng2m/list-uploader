@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.7",
     "boto3>=1.34",
     "anthropic>=1.8.0",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]
@@ -40,13 +41,17 @@ extend-exclude = ["cdk.out", "build", "frontend"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
+# Tests use real Windows-1252 punctuation (en dash, curly quotes) on purpose.
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["RUF001"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["shared", "bff", "audit_archiver", "tests", "infra"]
+known-first-party = ["shared", "bff", "audit_archiver", "tasks", "tests", "infra"]
 
 [tool.mypy]
 python_version = "3.11"
 mypy_path = "backend"
-packages = ["shared", "bff", "audit_archiver", "infra"]
+packages = ["shared", "bff", "audit_archiver", "tasks", "infra"]
 explicit_package_bases = true
 exclude = ["infra/tests/"]
 strict = true

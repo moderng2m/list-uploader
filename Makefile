@@ -2,7 +2,7 @@
 ENV ?= dev
 CDK := npx -y aws-cdk@2
 
-.PHONY: help install lint typecheck test synth web-dev web-build diff deploy clean
+.PHONY: help install lint typecheck test fixtures synth web-dev web-build diff deploy clean
 
 help:  ## Show targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -22,6 +22,9 @@ typecheck: lint
 test:  ## Backend + infra tests (pytest/moto) and frontend tests (vitest)
 	uv run pytest
 	cd frontend && npm test
+
+fixtures:  ## Regenerate synthetic sample files and the downloadable template
+	uv run python backend/tests/fixtures/make_synthetic.py
 
 synth:  ## cdk synth for ENV (default dev); bundles Lambda code locally
 	$(CDK) synth -c env=$(ENV) --quiet
