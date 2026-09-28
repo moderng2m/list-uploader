@@ -46,10 +46,17 @@ describe("analysis review", () => {
   it("filters rows by issue", async () => {
     renderAnalysis();
     const group = (await screen.findByText("DUPLICATE_IN_FILE")).closest("li")!;
-    await userEvent.setup().click(within(group).getByRole("button", { name: "Show rows" }));
-    await screen.findByRole("button", { name: "DUPLICATE_IN_FILE ✕" });
+    const user = userEvent.setup();
+    await user.click(within(group).getByRole("button", { name: "Show rows" }));
+    const rowsPanel = screen.getByRole("region", { name: "Rows" });
+    expect(await within(rowsPanel).findByRole("status")).toHaveTextContent("Showing rows with DUPLICATE_IN_FILE");
+    expect(group).toHaveClass("active");
     expect(screen.getAllByRole("button", { name: /^Edit row/ })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Edit row 5" })).toBeInTheDocument();
+
+    await user.click(within(rowsPanel).getByRole("button", { name: "Show all rows" }));
+    expect(await screen.findByRole("button", { name: "Edit row 3" })).toBeInTheDocument();
+    expect(group).not.toHaveClass("active");
   });
 
   it("edits a row and sends only the changed field", async () => {

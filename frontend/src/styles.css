@@ -205,3 +205,20 @@ button.link { border: none; background: none; color: var(--accent); text-decorat
 .ls-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .ls-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }
 .whoami .link { margin-left: 0.75rem; }
+
+/* Analysis review: issues beside the rows on wide screens (stacked below 1100px). */
+.review-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (min-width: 1100px) {
+  .review-layout { grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); }
+  .review-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+}
+.review-side > .card { margin-bottom: 1rem; }
+.review-rows { scroll-margin-top: 1rem; }
+.issue-groups li.active { background: var(--info-bg); border-radius: 6px; padding-left: 0.5rem; padding-right: 0.5rem; }
+.filter-banner { background: var(--info-bg); color: var(--info); padding: 0.4rem 0.6rem; border-radius: 6px; margin: 0 0 0.75rem; }
+/* Keep a row's problem text inside the visible part of a wide, scrolling grid. */
+.row-issue { position: sticky; left: 0; max-width: min(46rem, calc(100vw - 7.5rem)); }
+@media (min-width: 1100px) { .row-issue { max-width: 40rem; } }
+/* Issue list: actions on their own line, compact. */
+.review-side .issue-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.35rem 0 0; }
+.review-side .issue-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }

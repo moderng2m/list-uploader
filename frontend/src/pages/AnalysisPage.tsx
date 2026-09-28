@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Analysis, BulkAction, CampaignCard, Issue, Row, RowChange } from "../api/types";
@@ -102,9 +102,12 @@ function AnalysisReview({ jobId }: { jobId: string }) {
       setBusy(false);
     }
   };
+  const rowsPanel = useRef<HTMLElement>(null);
   const setIssueFilter = (code?: string) => {
     setOffset(0);
     setFilter((f) => ({ ...f, issue_code: code }));
+    // Side by side the rows are already in view; stacked (narrow screens) they're below.
+    if (code) rowsPanel.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -122,22 +125,26 @@ function AnalysisReview({ jobId }: { jobId: string }) {
               {actionError}
             </p>
           )}
-          <IssueGroups
-            analysis={a}
-            active={filter.issue_code}
-            onFilter={setIssueFilter}
-            onBulk={(action, params) => act(() => api.bulkAction(jobId, action, params))}
-          />
-          <CampaignPanel campaigns={a.campaigns} />
-          <section className="card">
-            <h2>
-              Rows
-              {filter.issue_code && (
-                <button type="button" className="chip" onClick={() => setIssueFilter(undefined)}>
-                  {filter.issue_code} ✕
+          <div className="review-layout">
+            <div className="review-side">
+              <IssueGroups
+                analysis={a}
+                active={filter.issue_code}
+                onFilter={setIssueFilter}
+                onBulk={(action, params) => act(() => api.bulkAction(jobId, action, params))}
+              />
+              <CampaignPanel campaigns={a.campaigns} />
+            </div>
+          <section className="card review-rows" ref={rowsPanel} aria-label="Rows">
+            <h2>Rows</h2>
+            {filter.issue_code && (
+              <p className="filter-banner" role="status">
+                Showing rows with <code>{filter.issue_code}</code>{" "}
+                <button type="button" className="link" onClick={() => setIssueFilter(undefined)}>
+                  Show all rows
                 </button>
-              )}
-            </h2>
+              </p>
+            )}
             <label className="inline">
               Show{" "}
               <select
@@ -187,6 +194,7 @@ function AnalysisReview({ jobId }: { jobId: string }) {
               )}
             </Async>
           </section>
+          </div>
           <NextStep jobId={jobId} analysis={a} />
         </div>
       )}
@@ -212,7 +220,7 @@ function IssueGroups({
       <h2>Issues</h2>
       <ul className="issue-groups">
         {analysis.issue_groups.map((g) => (
-          <li key={g.code}>
+          <li key={g.code} className={active === g.code ? "active" : undefined}>
             <SeverityBadge severity={g.severity} /> <code>{g.code}</code> · {g.count} {g.count === 1 ? "row" : "rows"} —{" "}
             {g.explanation}
             <span className="issue-actions">
