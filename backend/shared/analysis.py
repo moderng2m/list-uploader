@@ -129,6 +129,7 @@ class AnalysisContext:
     normalizer: Normalizer
     owner_email: str
     list_date: str  # YYYY-MM-DD for generated list names
+    enrichment_done: bool = False  # enrichment has run for this job (P4)
 
 
 @dataclass
@@ -244,6 +245,17 @@ def evaluate_row(row: Mapping[str, Any], ctx: AnalysisContext) -> RowEvaluation:
     mapped = {key: str(source.get(header, "")) for header, key in ctx.mapping.items()}
     # A user edit replaces the source value and is normalized like one (SPEC §11.1).
     inputs = {**mapped, **edits}
+    # Enrichment fills blanks only, never email, and is normalized like source
+    # values (SPEC §7.3 step 3, §15.4). Review matches apply only if the user said so.
+    enrichment = row.get("enrichment") or {}
+    enriched: set[str] = set()
+    if enrichment.get("status") == "accepted" or (
+        enrichment.get("status") == "review" and enrichment.get("decision") == "apply"
+    ):
+        for key, value in (enrichment.get("fields") or {}).items():
+            if key != "email" and value and not str(inputs.get(key, "")).strip():
+                inputs[key] = str(value)
+                enriched.add(key)
     normalized = ctx.normalizer.normalize(inputs)
     flags = normalized.flags
 
@@ -262,6 +274,8 @@ def evaluate_row(row: Mapping[str, Any], ctx: AnalysisContext) -> RowEvaluation:
     def origin(key: str, value: str) -> str:
         if key in edits:
             return "user_edit"
+        if key in enriched:
+            return "enrichment:zoominfo"
         return "source" if value == inputs.get(key, "") else "normalized"
 
     # 1-2. User edit / normalized source.
@@ -287,10 +301,24 @@ def evaluate_row(row: Mapping[str, Any], ctx: AnalysisContext) -> RowEvaluation:
             value = free_text(raw)
         put(f.key, value, origin(f.key, value))
 
-    # 3. Accepted enrichment fills blanks only (SPEC §15.4); lands in P4.
-    for key, value in (row.get("enrichment_values") or {}).items():
-        if key != "email" and not processed.get(key) and value:
-            put(key, value, "enrichment:zoominfo")
+    # Enrichment outcomes that need the user (SPEC §15.4).
+    if enrichment.get("status") == "review" and not enrichment.get("decision"):
+        issues.append(
+            Issue("ENRICHMENT_REVIEW", WARNING, messages.ENRICHMENT_REVIEW, None, "enrichment")
+        )
+    if (
+        provenance.get("linkedin_url") == "enrichment:zoominfo"
+        and int(enrichment.get("linkedin_profile_count") or 0) > 1
+    ):
+        issues.append(
+            Issue(
+                "LINKEDIN_MULTIPLE_PROFILES",
+                WARNING,
+                messages.LINKEDIN_MULTIPLE_PROFILES,
+                "linkedin_url",
+                "enrichment",
+            )
+        )
 
     # Parse-time Excel errors on mapped columns.
     for pi in row.get("issues_parse", []):
@@ -385,7 +413,12 @@ def evaluate_row(row: Mapping[str, Any], ctx: AnalysisContext) -> RowEvaluation:
     # required once the campaign itself is valid; until then its issue covers them.
     for key in ("email", "campaign_id", "company", "first_name", "last_name"):
         if not processed.get(key):
-            pending = ctx.enrich and key in ENRICHABLE_REQUIRED
+            # Pending until enrichment has had its chance (SPEC §9 footnote *): before it
+            # runs, or while this row's match awaits the user's apply/skip.
+            awaiting = not ctx.enrichment_done or (
+                enrichment.get("status") == "review" and not enrichment.get("decision")
+            )
+            pending = ctx.enrich and key in ENRICHABLE_REQUIRED and awaiting
             msg = messages.REQUIRED_PENDING if pending else messages.REQUIRED_MISSING
             issues.append(
                 Issue(

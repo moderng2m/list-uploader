@@ -39,6 +39,7 @@ class BffDeps:
     start_parse: Callable[[str], None]
     rows: RowRepo
     start_analysis: Callable[[str], None]
+    start_enrichment: Callable[[str], None]
     config: ConfigStore
     workato: WorkatoClient
     normalizer: Normalizer = field(default_factory=load_normalizer)
@@ -62,17 +63,24 @@ class BffDeps:
         sfn = boto3.client("stepfunctions")
         analyze_arn = os.environ["ANALYZE_STATE_MACHINE"]
 
-        def start_analysis(job_id: str) -> None:
-            sfn.start_execution(
-                stateMachineArn=analyze_arn,
-                name=f"{job_id}-{new_ulid()}",
-                input=json.dumps({"job_id": job_id}),
-            )
+        def starter(arn: str) -> Callable[[str], None]:
+            def start(job_id: str) -> None:
+                sfn.start_execution(
+                    stateMachineArn=arn,
+                    name=f"{job_id}-{new_ulid()}",
+                    input=json.dumps({"job_id": job_id}),
+                )
+
+            return start
+
+        start_analysis = starter(analyze_arn)
+        start_enrichment = starter(os.environ["ENRICH_STATE_MACHINE"])
 
         if os.environ.get("INTEGRATIONS", "fake") != "fake":
             raise RuntimeError("only INTEGRATIONS=fake is wired up in this build")
         return cls(
             start_analysis=start_analysis,
+            start_enrichment=start_enrichment,
             config=ConfigStore(),
             workato=FakeWorkatoClient(env=os.environ.get("ENV", "dev"), campaigns=dict(CAMPAIGNS)),
             bedrock_model_id=os.environ.get("BEDROCK_MODEL_ID", "fake-heuristic"),

@@ -18,7 +18,7 @@ describe("every route renders with mock data", () => {
     ["/upload", "Upload a lead list", "Enrich leads with ZoomInfo"],
     [job("mapping"), "Map your columns", "Job Position"],
     [job("analysis"), "Analyze and fix", "Demo Conference 2026"],
-    [job("enrichment"), "Enrichment results", "ZoomInfo shows a different current employer"],
+    [job("enrichment"), "Enrichment results", "Enrichment hasn't run yet."],
     [job("send"), "Review and send", "You can't send yet"],
     [job("result"), "Result", "3 leads submitted to Eloqua"],
     ["/history", "Upload history", "demo_event_list.xlsx"],

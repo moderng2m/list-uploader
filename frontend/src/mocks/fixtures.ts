@@ -250,23 +250,38 @@ export const analysis: Analysis = {
   ],
 };
 
+// Mirrors the backend result for backend/tests/fixtures/synthetic/enrichment_demo.csv.
 export const enrichment: Enrichment = {
-  sent: 5,
-  accepted: 3,
+  state: "ENRICHMENT_REVIEW",
+  editable: true,
+  sent: 6,
+  accepted: 2,
   needs_review: 1,
-  no_match: 1,
+  no_match: 3,
   errors: 0,
-  linkedin_found: 3,
-  fields_filled: { company: 1, title: 2, linkedin_url: 3 },
+  linkedin_found: 2,
+  fields_filled: { Company: 1, Title: 2, LinkedIn: 2, "Mobile Phone": 1, City: 1 },
   review: [
     {
       row_id: 4,
-      source: { name: "Alan Placeholder", company: "asdf", title: "CFO" },
-      candidate: { name: "Alan Placeholder", company: "Initech Sample", title: "Chief Financial Officer" },
-      match_score: 74,
-      conflicts: ["ZoomInfo shows a different current employer"],
+      source: { name: "Linus Sample", company: "Hooli Example", title: "Engineer", email: "linus@hooli.example" },
+      candidate: { name: "Linus Sample", company: "Hooli XYZ Demo", title: "Head of Platform", email: "linus.sample@hooli.example" },
+      match_score: 71,
+      conflicts: ["ZoomInfo shows a different current employer.", "ZoomInfo shows a different job title."],
+      would_fill: ["LinkedIn"],
+      decision: null,
     },
   ],
+  filled: [
+    { row_id: 2, field: "Title", before: "", after: "VP Marketing" },
+    { row_id: 2, field: "LinkedIn", before: "", after: "https://www.linkedin.com/in/ada-example-demo" },
+    { row_id: 2, field: "Mobile Phone", before: "", after: "+15550100151" },
+    { row_id: 3, field: "Company", before: "", after: "Pied Piper Demo" },
+    { row_id: 3, field: "Title", before: "", after: "CTO" },
+    { row_id: 3, field: "LinkedIn", before: "", after: "linkedin.com/in/kay-sample-demo" },
+    { row_id: 3, field: "City", before: "", after: "Palo Alto" },
+  ],
+  notes: [],
 };
 
 export const gate: GateResult = {

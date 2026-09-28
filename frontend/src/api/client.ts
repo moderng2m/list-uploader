@@ -2,6 +2,7 @@ import type {
   AdminConfig,
   Analysis,
   BulkAction,
+  EnrichmentDecision,
   Row,
   RowChange,
   RowsPage,
@@ -69,7 +70,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action, params }),
     }),
+  startEnrichment: (id: string) => request<{ job_id: string; state: string }>(`/jobs/${id}/enrich`, { method: "POST" }),
   getEnrichment: (id: string) => request<Enrichment>(`/jobs/${id}/enrichment`),
+  decideEnrichment: (
+    id: string,
+    body: { decisions: { row_id: number; decision: EnrichmentDecision }[] } | { skip_all: true },
+  ) =>
+    request<{ decided_row_ids: number[] }>(`/jobs/${id}/enrichment-decisions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getGate: (id: string) => request<GateResult>(`/jobs/${id}/gate`),
   getResult: (id: string) => request<SendResult>(`/jobs/${id}/result`),
   leadSources: () => request<LeadSource[]>("/admin/lead-sources"),

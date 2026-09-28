@@ -55,7 +55,7 @@ ALLOWED: dict[JobState, frozenset[JobState]] = {
     S.READY_TO_SEND: frozenset({S.SENDING}),
     S.SENDING: frozenset({S.COMPLETED, S.COMPLETED_WITH_ERRORS}),
     # SPEC §5.1: after an unrecoverable error the user can retry.
-    S.FAILED: frozenset({S.ANALYZING}),
+    S.FAILED: frozenset({S.ANALYZING, S.ENRICHING}),
 }
 # FAILED can follow any running state; review states can expire (SPEC §5.1).
 for _state in RUNNING:

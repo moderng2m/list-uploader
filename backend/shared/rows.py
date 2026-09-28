@@ -78,6 +78,14 @@ class RowRepo:
                 ExpressionAttributeValues={":f": to_dynamo(flags), ":s": status},
             )
 
+    def set_enrichment(self, job_id: str, results: dict[int, dict[str, Any]]) -> None:
+        for row_id, result in results.items():
+            self._table.update_item(
+                Key={"job_id": job_id, "row_id": row_id},
+                UpdateExpression="SET enrichment = :e",
+                ExpressionAttributeValues={":e": to_dynamo(result)},
+            )
+
     def put_all(self, items: Iterable[dict[str, Any]]) -> None:
         with self._table.batch_writer() as batch:
             for item in items:

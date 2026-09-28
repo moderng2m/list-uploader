@@ -40,7 +40,7 @@ describe("analysis review", () => {
     expect(within(campaigns).getByText("Inactive")).toBeInTheDocument();
     // Source vs processed side by side.
     expect(within(await screen.findByRole("table")).getByText("was: Events")).toBeInTheDocument();
-    expect(screen.getByText("Enrichment will look up 3 contacts.")).toBeInTheDocument();
+    expect(screen.getByText(/Enrichment will look up 3 contacts in ZoomInfo/)).toBeInTheDocument();
   });
 
   it("filters rows by issue", async () => {

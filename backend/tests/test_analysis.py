@@ -435,12 +435,51 @@ class TestPrecedence:
 
     def test_enrichment_only_fills_blanks_and_never_email(self) -> None:
         r = row(Title="")
-        r["enrichment_values"] = {"title": "CFO", "company": "Other Co", "email": "x@y.example"}
+        r["enrichment"] = {
+            "status": "accepted",
+            "fields": {"title": "CFO", "company": "Other Co", "email": "x@y.example"},
+        }
         e = ev(r)
         assert e.processed["title"] == "CFO"
         assert e.provenance["title"] == "enrichment:zoominfo"
         assert e.processed["company"] == "Acme Demo Co"
         assert e.processed["email"] == "ada@acme.example"
+
+    def test_enriched_values_are_normalized(self) -> None:
+        r = row()
+        r["enrichment"] = {"status": "accepted", "fields": {"phone": "(555) 010-0100"}}
+        e = ev(r)
+        assert e.processed["phone"] == "+15550100100"
+        assert e.provenance["phone"] == "enrichment:zoominfo"
+
+    def test_review_match_applies_only_after_the_user_says_so(self) -> None:
+        r = row(Title="")
+        r["enrichment"] = {"status": "review", "fields": {"title": "CFO"}}
+        e = ev(r)
+        assert "title" not in e.processed
+        assert issue(e, "ENRICHMENT_REVIEW").severity == "warning"
+        r["enrichment"]["decision"] = "skip"
+        assert "ENRICHMENT_REVIEW" not in codes(ev(r))
+        r["enrichment"]["decision"] = "apply"
+        assert ev(r).processed["title"] == "CFO"
+
+    def test_multiple_linkedin_profiles_warns(self) -> None:
+        r = row()
+        r["enrichment"] = {
+            "status": "accepted",
+            "linkedin_profile_count": 2,
+            "fields": {"linkedin_url": "linkedin.com/in/ada"},
+        }
+        assert issue(ev(r), "LINKEDIN_MULTIPLE_PROFILES").severity == "warning"
+
+    def test_pending_becomes_blocking_after_enrichment(self) -> None:
+        assert ev(row(Company=""), enrich=True).status == "pending_enrichment"
+        assert ev(row(Company=""), enrich=True, enrichment_done=True).status == "blocked"
+
+    def test_still_pending_while_review_undecided(self) -> None:
+        r = row(Company="")
+        r["enrichment"] = {"status": "review", "fields": {"company": "Acme Demo Co"}}
+        assert ev(r, enrich=True, enrichment_done=True).status == "pending_enrichment"
 
 
 class TestFileLevel:

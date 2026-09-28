@@ -184,23 +184,32 @@ export interface RowChange {
   restore?: string;
 }
 
+export type EnrichmentDecision = "apply" | "skip";
+
 export interface EnrichmentReviewItem {
   row_id: number;
-  source: Record<string, string>;
-  candidate: Record<string, string>;
-  match_score: number;
+  source: { name: string; company: string; title: string; email: string };
+  candidate: { name?: string; company?: string; title?: string; email?: string };
+  match_score: number | null;
   conflicts: string[];
+  would_fill: string[];
+  decision: EnrichmentDecision | null;
 }
 
 export interface Enrichment {
+  state: JobState;
+  editable: boolean;
   sent: number;
   accepted: number;
   needs_review: number;
   no_match: number;
   errors: number;
   linkedin_found: number;
+  /** Field label -> rows filled. */
   fields_filled: Record<string, number>;
   review: EnrichmentReviewItem[];
+  filled: { row_id: number; field: string; before: string; after: string }[];
+  notes: string[];
 }
 
 export interface GateResult {

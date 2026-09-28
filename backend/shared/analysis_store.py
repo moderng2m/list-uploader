@@ -56,6 +56,7 @@ def build_context(job: Mapping[str, Any], normalizer: Normalizer) -> AnalysisCon
         normalizer=normalizer,
         owner_email=job["owner_email"],
         list_date=stored.get("list_date", str(job.get("created_at", ""))[:10]),
+        enrichment_done="enrichment_completed_at" in job,
     )
 
 
@@ -82,6 +83,7 @@ def row_events(
     *,
     reason: str | None = None,
     correlation_id: str | None = None,
+    details_for: Mapping[EventType, dict[str, Any]] | None = None,
 ) -> list[AuditEvent]:
     """Audit events explaining how this evaluation differs from the row's last one.
 
@@ -102,6 +104,12 @@ def row_events(
             groups.setdefault(EventType.VALUE_AUTO_CORRECTED, {})[key] = value
         elif how.startswith("derived"):
             groups.setdefault(EventType.VALUE_DERIVED, {})[key] = value
+        elif how.startswith("enrichment"):
+            groups.setdefault(EventType.ENRICHMENT_RESULT, {})[key] = value
+    extra = dict(details_for or {})
+    # A details-only event (e.g. an enrichment with no match) still gets recorded.
+    for event_type in extra:
+        groups.setdefault(event_type, {})
     events: list[AuditEvent] = []
     for event_type, after in groups.items():
         events.append(
@@ -111,10 +119,12 @@ def row_events(
                 job_id=job_id,
                 row_id=row_id,
                 subject={"fields": sorted(after)},
-                before={k: old_processed.get(k) for k in after},
-                after=after,
-                reason=reason or ",".join(sorted({ev.provenance[k] for k in after})),
+                before={k: old_processed.get(k) for k in after} if after else None,
+                after=after or None,
+                reason=reason or ",".join(sorted({ev.provenance[k] for k in after})) or None,
+                details=extra.get(event_type),
                 lead_email=email,
+                correlation_id=correlation_id,
             )
         )
 

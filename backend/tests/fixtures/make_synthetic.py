@@ -210,6 +210,28 @@ def analysis_rows() -> list[list[object]]:
     ]  # fmt: skip
 
 
+def enrichment_rows() -> list[list[object]]:
+    """P4 file: one row per enrichment outcome (see shared/fake_zoominfo.py)."""
+    return [
+        ["Company", "First name", "Last Name", "Email Address", "Title",
+         "SFDC Last Campaign ID", "Business Phone"],
+        # 2: accepted; fills title, LinkedIn (2 profiles), mobile; direct phone is DNC
+        ["Acme Demo Co", "Ada", "Example", "ada@acme.example", "", "701000000000001AAA", ""],
+        # 3: blank company (pending) -> accepted fills it
+        ["", "Kay", "Sample", "kay@pied.example", "", "701000000000001AAA", ""],
+        # 4: needs review (different employer); has a title that must not be overwritten
+        ["Hooli Example", "Linus", "Sample", "linus@hooli.example", "Engineer",
+         "701000000000001AAA", ""],
+        # 5: no match
+        ["Nowhere Demo", "Nia", "Sample", "nia@nowhere.example", "", "701000000000001AAA", ""],
+        # 6: invalid input (shared inbox)
+        ["Vandelay Demo", "Art", "Sample", "info@vandelay.example", "Buyer",
+         "701000000000001AAA", ""],
+        # 7: blank company and no match -> blocked once enrichment has run
+        ["", "Rex", "Sample", "rex@nowhere.example", "", "701000000000001AAA", ""],
+    ]  # fmt: skip
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     write_template_xlsx(OUT / "template_filled.xlsx", with_data=True)
@@ -218,6 +240,7 @@ def main() -> None:
     write_csv(OUT / "semicolon.csv", semicolon_rows(), encoding="utf-8", delimiter=";")
     write_vendor_xlsx(OUT / "vendor_export.xlsx")
     write_csv(OUT / "analysis_demo.csv", analysis_rows(), encoding="utf-8")
+    write_csv(OUT / "enrichment_demo.csv", enrichment_rows(), encoding="utf-8")
     PUBLIC.mkdir(parents=True, exist_ok=True)
     write_template_xlsx(PUBLIC / "List_Upload_Template.xlsx", with_data=False)
     print(f"wrote fixtures to {OUT} and template to {PUBLIC}")

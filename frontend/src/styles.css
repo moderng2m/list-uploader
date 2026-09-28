@@ -164,3 +164,5 @@ aside h3 { margin-top: 1rem; font-size: 0.95rem; }
 .row-actions button { margin-right: 0.3rem; }
 .row-issue select { width: auto; min-width: 0; }
 .row-actions label.check { font-size: 0.85em; margin-top: 0.3rem; }
+.review-item tr.differs td:last-child { color: var(--warn); font-weight: 600; }
+.grid.compact td { overflow-wrap: anywhere; }

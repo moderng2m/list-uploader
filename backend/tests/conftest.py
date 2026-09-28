@@ -103,6 +103,7 @@ class Env:
     workato: Any = None
     parse_requests: list[str] = field(default_factory=list)
     analysis_requests: list[str] = field(default_factory=list)
+    enrichment_requests: list[str] = field(default_factory=list)
 
     def bff_deps(self, **overrides: Any) -> Any:
         from bff.app import BffDeps
@@ -115,6 +116,7 @@ class Env:
             "uploads_bucket": UPLOADS_BUCKET,
             "start_parse": self.parse_requests.append,
             "start_analysis": self.analysis_requests.append,
+            "start_enrichment": self.enrichment_requests.append,
             "config": self.config,
             "workato": self.workato,
             **overrides,
@@ -134,6 +136,18 @@ class Env:
             **overrides,
         }
         return AnalyzeDeps(**kwargs)
+
+    def enrich_deps(self, **overrides: Any) -> Any:
+        from shared.enrichment import ZoomInfoProvider
+        from tasks.enrich import EnrichDeps
+
+        kwargs: dict[str, Any] = {
+            "jobs": self.jobs,
+            "rows": self.rows,
+            "provider": ZoomInfoProvider(self.workato, sleep=lambda _: None),
+            **overrides,
+        }
+        return EnrichDeps(**kwargs)
 
     def parse_deps(self, **overrides: Any) -> Any:
         from tasks.parse_file import ParseDeps
@@ -164,6 +178,7 @@ def env(
     from shared.bedrock_client import FakeBedrockClient
     from shared.config_store import ConfigStore
     from shared.fake_sfdc import CAMPAIGNS
+    from shared.fake_zoominfo import enrich_handler
     from shared.jobs import JobRepo
     from shared.rows import RowRepo
     from shared.workato_client import FakeWorkatoClient
@@ -180,7 +195,9 @@ def env(
         config=ConfigStore(CONFIG_TABLE),
         # No AI suggestions unless a test queues some.
         bedrock=FakeBedrockClient(default='{"items": []}'),
-        workato=FakeWorkatoClient(env="dev", campaigns=dict(CAMPAIGNS)),
+        workato=FakeWorkatoClient(
+            env="dev", campaigns=dict(CAMPAIGNS), enrich_handler=enrich_handler
+        ),
     )
 
 

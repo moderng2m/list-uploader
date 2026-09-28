@@ -28,6 +28,7 @@ EXPLANATIONS: dict[str, str] = {
     "FIELD_FORMAT_INVALID": "A value wasn't in a usable format and was left blank.",
     "NOT_SENT_FIELD": "Some fields aren't sent to Eloqua yet (kept in the processed file).",
     "ENRICHMENT_REVIEW": "An enrichment match needs your decision.",
+    "LINKEDIN_MULTIPLE_PROFILES": "ZoomInfo has more than one LinkedIn profile for the person.",
 }
 
 # Bulk action id -> the issue codes it applies to. Only actions that are safe to apply

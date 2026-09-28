@@ -234,3 +234,23 @@ def test_bff_can_start_analysis_and_use_transactions(stacks: dict[str, Stack]) -
                for a in _as_list(s["Action"])}  # fmt: skip
     assert "states:StartExecution" in actions
     assert "dynamodb:ConditionCheckItem" in actions
+
+
+def test_enrich_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    enrich = next(m for lid, m in machines.items() if lid.startswith("EnrichWorkflow"))
+    definition = json.dumps(enrich["Properties"]["DefinitionString"])
+    for state in ("EnrichPrepare", "EnrichBatches", "EnrichFinalize", "EnrichMarkFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":2' in definition
+    template.has_resource_properties("AWS::Lambda::Function", {"Handler": "tasks.enrich.handler"})
+    api = Template.from_stack(stacks["api"])
+    api.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like({"ENRICH_STATE_MACHINE": Match.any_value()})
+            }
+        },
+    )

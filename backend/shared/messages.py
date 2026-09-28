@@ -137,3 +137,22 @@ ANALYSIS_FAILED = (
     "Something went wrong while analyzing this file. Your mapping is saved; try running the "
     "analysis again. If it keeps happening, contact Marketing Tech Ops."
 )
+
+# --- Enrichment (SPEC §15) ---
+ENRICHMENT_REVIEW = (
+    "ZoomInfo found a possible match that needs your decision. Apply it or skip it on the "
+    "Enrichment screen."
+)
+LINKEDIN_MULTIPLE_PROFILES = (
+    "ZoomInfo has more than one LinkedIn profile for this person. Check the one added is right."
+)
+ENRICHMENT_BATCH_ERRORS = (
+    "{n} contacts couldn't be enriched (service error). They'll go ahead with the details "
+    "you uploaded if they pass the checks."
+)
+ENRICHMENT_NOT_ENABLED = "Enrichment wasn't turned on for this upload."
+ENRICHMENT_FAILED = (
+    "Something went wrong while enriching this file. Your fixes are saved; try enriching "
+    "again. If it keeps happening, contact Marketing Tech Ops."
+)
+ENRICHMENT_NOT_READY = "This upload hasn't been enriched yet."

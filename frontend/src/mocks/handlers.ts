@@ -1,7 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { API_BASE } from "../api/client";
-import type { BulkAction, Job, RowChange } from "../api/types";
+import type { BulkAction, EnrichmentDecision, Job, JobState, RowChange } from "../api/types";
 import { mockAnalysis, mockBulk, mockEdit, mockRows, resetAnalysisMock } from "./analysisMock";
+import { mockDecide, mockEnrichment, resetEnrichmentMock } from "./enrichmentMock";
 import * as f from "./fixtures";
 
 const u = (path: string) => `${API_BASE}${path}`;
@@ -12,14 +13,19 @@ export const MOCK_UPLOAD_URL = "https://uploads.mock.invalid/";
 const created = new Map<string, Job>();
 let counter = 0;
 
-// Jobs whose analysis has been started in this session (done on the next poll).
-const analyzing = new Set<string>();
+// Jobs with a workflow running in this session (it finishes on the next poll).
+const running = new Map<string, JobState>();
+const DONE: Partial<Record<JobState, JobState>> = {
+  ANALYZING: "ANALYSIS_REVIEW",
+  ENRICHING: "ENRICHMENT_REVIEW",
+};
 
 export function resetMockJobs() {
   created.clear();
-  analyzing.clear();
+  running.clear();
   counter = 0;
   resetAnalysisMock();
+  resetEnrichmentMock();
 }
 
 function findJob(id: string): Job | undefined {
@@ -28,10 +34,11 @@ function findJob(id: string): Job | undefined {
 
 /** Simulate async work (parse, analysis) finishing the first time the job is polled. */
 function advance(job: Job): Job {
-  if (job.state === "ANALYZING") {
-    const done: Job = { ...job, state: "ANALYSIS_REVIEW", summary: mockAnalysis().summary };
+  const finished = DONE[job.state];
+  if (finished) {
+    const done: Job = { ...job, state: finished, summary: mockAnalysis().summary };
     if (created.has(job.job_id)) created.set(job.job_id, done);
-    analyzing.delete(job.job_id);
+    running.delete(job.job_id);
     return done;
   }
   if (job.state !== "UPLOADED") return job;
@@ -48,6 +55,13 @@ function advance(job: Job): Job {
     : { ...job, state: "MAPPING_REVIEW", parse: f.demoParse };
   created.set(job.job_id, next);
   return next;
+}
+
+function start(id: string, state: JobState) {
+  running.set(id, state);
+  const job = created.get(id);
+  if (job) created.set(id, { ...job, state });
+  return HttpResponse.json({ job_id: id, state }, { status: 202 });
 }
 
 export const handlers = [
@@ -85,7 +99,7 @@ export const handlers = [
   http.get(u("/jobs/:id"), ({ params }) => {
     const id = String(params.id);
     const found = findJob(id);
-    const job = found && analyzing.has(id) ? { ...found, state: "ANALYZING" as const } : found;
+    const job = found && running.has(id) ? { ...found, state: running.get(id)! } : found;
     return job
       ? HttpResponse.json(advance(job))
       : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
@@ -102,13 +116,8 @@ export const handlers = [
       );
     return HttpResponse.json({ ...f.mapping, confirmed: true, confirmed_at: new Date().toISOString() });
   }),
-  http.post(u("/jobs/:id/analyze"), ({ params }) => {
-    const id = String(params.id);
-    analyzing.add(id);
-    const job = created.get(id);
-    if (job) created.set(id, { ...job, state: "ANALYZING" });
-    return HttpResponse.json({ job_id: id, state: "ANALYZING" }, { status: 202 });
-  }),
+  http.post(u("/jobs/:id/analyze"), ({ params }) => start(String(params.id), "ANALYZING")),
+  http.post(u("/jobs/:id/enrich"), ({ params }) => start(String(params.id), "ENRICHING")),
   http.get(u("/jobs/:id/analysis"), () => HttpResponse.json(mockAnalysis())),
   http.get(u("/jobs/:id/rows"), ({ request }) => HttpResponse.json(mockRows(new URL(request.url).searchParams))),
   http.patch(u("/jobs/:id/rows/:rowId"), async ({ params, request }) => {
@@ -119,7 +128,14 @@ export const handlers = [
     const body = (await request.json()) as { action: BulkAction; params: Record<string, unknown> };
     return HttpResponse.json(mockBulk(body.action, body.params ?? {}));
   }),
-  http.get(u("/jobs/:id/enrichment"), () => HttpResponse.json(f.enrichment)),
+  http.get(u("/jobs/:id/enrichment"), () => HttpResponse.json(mockEnrichment())),
+  http.post(u("/jobs/:id/enrichment-decisions"), async ({ request }) => {
+    const body = (await request.json()) as {
+      decisions?: { row_id: number; decision: EnrichmentDecision }[];
+      skip_all?: boolean;
+    };
+    return HttpResponse.json(mockDecide(body));
+  }),
   http.get(u("/jobs/:id/gate"), () => HttpResponse.json(f.gate)),
   http.get(u("/jobs/:id/result"), () => HttpResponse.json(f.result)),
   http.get(u("/admin/lead-sources"), () => HttpResponse.json(f.leadSources)),

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Analysis, BulkAction, CampaignCard, Issue, Job, Row, RowChange } from "../api/types";
+import type { Analysis, BulkAction, CampaignCard, Issue, Row, RowChange } from "../api/types";
 import { Async, PageHeader, SeverityBadge, StatusBadge, SummaryCards } from "../components/ui";
 import { useApi } from "../components/useApi";
+import { useJobPoll } from "../components/useJobPoll";
 
 const GRID_FIELDS: { key: string; label: string }[] = [
   { key: "company", label: "Company" },
@@ -19,31 +20,6 @@ const PAGE = 100;
 type Act = (fn: () => Promise<unknown>) => Promise<void>;
 
 // --- job state wrapper ------------------------------------------------------------------
-
-function useJobPoll(jobId: string, intervalMs: number) {
-  const [job, setJob] = useState<Job | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = () =>
-      api.getJob(jobId).then(
-        (j) => {
-          if (cancelled) return;
-          setJob(j);
-          if (j.state === "ANALYZING") timer = setTimeout(load, intervalMs);
-        },
-        (e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)),
-      );
-    load();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [jobId, intervalMs, tick]);
-  return { job, error, reload: () => setTick((t) => t + 1) };
-}
 
 export function AnalysisPage({ pollIntervalMs = 1500 }: { pollIntervalMs?: number }) {
   const { jobId = "" } = useParams();
@@ -210,12 +186,7 @@ function AnalysisReview({ jobId }: { jobId: string }) {
               )}
             </Async>
           </section>
-          <div className="actions">
-            {a.enrich && <p className="muted">Enrichment will look up {a.enrichment_lookup_count} contacts.</p>}
-            <Link className="button primary" to={`/jobs/${jobId}/${a.enrich ? "enrichment" : "send"}`}>
-              {a.enrich ? "Next: Enrich" : "Next: Review & Send"}
-            </Link>
-          </div>
+          <NextStep jobId={jobId} analysis={a} />
         </div>
       )}
     </Async>
@@ -499,6 +470,50 @@ function IssueLine({
           Clear flag
         </button>
       )}
+    </div>
+  );
+}
+
+function NextStep({ jobId, analysis }: { jobId: string; analysis: Analysis }) {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  if (!analysis.enrich || analysis.state !== "ANALYSIS_REVIEW")
+    return (
+      <div className="actions">
+        {analysis.state === "ENRICHMENT_REVIEW" && (
+          <Link to={`/jobs/${jobId}/enrichment`}>Back to enrichment results</Link>
+        )}
+        <Link className="button primary" to={`/jobs/${jobId}/send`}>
+          Next: Review & Send
+        </Link>
+      </div>
+    );
+  async function enrich() {
+    setStarting(true);
+    setError(null);
+    try {
+      await api.startEnrichment(jobId);
+      navigate(`/jobs/${jobId}/enrichment`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStarting(false);
+    }
+  }
+  return (
+    <div className="actions">
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <p className="muted">
+        Enrichment will look up {analysis.enrichment_lookup_count} contacts in ZoomInfo. Each lookup may use a
+        ZoomInfo credit.
+      </p>
+      <button type="button" className="primary" onClick={enrich} disabled={starting}>
+        {starting ? "Starting…" : "Next: Enrich"}
+      </button>
     </div>
   );
 }

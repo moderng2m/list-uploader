@@ -43,13 +43,15 @@ backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
     ai_checks.py         AI junk detection and lead source matching
     issue_catalog.py     explanation + bulk action per issue code
     fake_sfdc.py         synthetic Salesforce campaigns for the fake Workato
+    enrichment.py        EnrichmentProvider protocol, ZoomInfoProvider, eligibility
+    fake_zoominfo.py     synthetic ZoomInfo answers for the fake Workato
     jobs.py              JobState machine; JobRepo (state change + audit in one txn)
     rows.py              Rows table access
     messages.py          all user-facing text (SPEC §20)
     config_defaults.py   thresholds and limits (SPEC §14.4)
     lead_normalizer/     normalizer v5 goes here unmodified (P3)
   bff/                   API Gateway router (Powertools APIGatewayHttpResolver)
-  tasks/                 async task Lambdas (parse_file; analyze = AnalyzeWorkflow steps)
+  tasks/                 async task Lambdas (parse_file; analyze, enrich = workflow steps)
   audit_archiver/        AuditEvents stream -> Firehose -> S3 archive
   tests/                 pytest + moto
     fixtures/synthetic/  generated sample files (make fixtures); never real data
@@ -167,10 +169,39 @@ Decisions made while building P3 (spec gaps):
 - FIELD_FORMAT_INVALID (warning) is new: SPEC §11.2 values that can't be used.
 - The lead source list is a placeholder until admins maintain it (P6).
 
+## Enrichment (P4)
+
+`POST /jobs/{id}/enrich` (ANALYSIS_REVIEW, job.enrich true; or retry from FAILED
+when the last error was enrichment) starts EnrichWorkflow: Prepare (eligible rows,
+SPEC §15.2, in batches of 25) -> Map (2 in parallel) of provider calls -> Finalize
+(re-evaluate every row, write rows and audit events, -> ENRICHMENT_REVIEW).
+`ZoomInfoProvider` retries a failing batch 3 times, then marks its rows `error`
+and the job carries on (§15.5). `tasks.enrich.run_all` mirrors the state machine.
+
+The provider only stores what ZoomInfo returned (`row.enrichment`). The merge
+lives in `evaluate_row`: accepted results, and review results the user chose to
+apply, fill blank inputs before normalization (never email), so precedence,
+normalization and re-validation are the same code as everywhere else. Do-not-call
+numbers are dropped by the provider. `POST /enrichment-decisions` (apply/skip or
+`skip_all`) goes through the same row-change path as row edits.
+
+Decisions made while building P4:
+- Rows can be edited in ENRICHMENT_REVIEW as well as ANALYSIS_REVIEW (the spec's
+  state diagram has no way back, but rows that stayed blank need fixing somewhere).
+- A row whose enrichment match is still awaiting apply/skip keeps its blank
+  company/name as pending, not blocking.
+- LINKEDIN_MULTIPLE_PROFILES (warning) is a new issue code for SPEC §15.4's
+  "more than one LinkedIn profile" warning.
+- ENRICHMENT_RESULT is written once per row at finalize: match details plus the
+  values filled. ENRICHMENT_REQUESTED is per batch.
+- `selected_candidate_json`'s key names aren't documented; the parser accepts
+  zi_best_x, snake_case and camelCase. Confirm against a real sample response.
+
 ## Phase status
 
 - P0 scaffold: done.
 - P1 upload and parse: done.
 - P2 column mapping: done.
 - P3 analysis: done except the golden-output test (needs normalizer v5).
-- Next: P4 (enrichment).
+- P4 enrichment: done (fake ZoomInfo).
+- Next: P5 (gate and send).

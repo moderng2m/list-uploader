@@ -14,7 +14,6 @@ from bff.app import app, correlation_id, current_user, deps, json_body, load_job
 from bff.auth import User
 from shared import messages
 from shared.analysis import (
-    ENRICHABLE_REQUIRED,
     Issue,
     RowEvaluation,
     apply_duplicates,
@@ -31,6 +30,7 @@ from shared.analysis_store import (
 )
 from shared.audit import Actor, AuditEvent, EventType
 from shared.catalog import BY_KEY, CATALOG_VERSION
+from shared.enrichment import eligible
 from shared.issue_catalog import BULK_ACTION_LABELS, EXPLANATIONS, bulk_action_for
 from shared.jobs import JobState, now_iso
 from shared.mapping import PROMPT_VERSION as MAPPING_PROMPT_VERSION
@@ -40,6 +40,9 @@ from shared.sfdc_ids import check_campaign_id
 # Derived from Salesforce; the file can't override it (SPEC §8 footnote **).
 NOT_EDITABLE = frozenset({"campaign_name"})
 ROWS_PAGE_MAX = 500
+# Rows can be fixed during analysis review and enrichment review (rows that were
+# pending enrichment may need a fix once it has run).
+REVIEW_STATES = frozenset({JobState.ANALYSIS_REVIEW, JobState.ENRICHMENT_REVIEW})
 
 
 def _json(status: int, body: Any) -> Response[Any]:
@@ -129,20 +132,6 @@ def _reviewable(job: Mapping[str, Any]) -> bool:
     )
 
 
-def _enrichment_eligible(row: Mapping[str, Any]) -> bool:
-    """SPEC §15.2: ready/warning/pending rows, and blocked rows only when every
-    blocker is a blank field enrichment can fill."""
-    status = row.get("status")
-    if status in ("ready", "warning", "pending_enrichment"):
-        return True
-    if status != "blocked":
-        return False
-    blockers = [i for i in row.get("issues", []) if i["severity"] == "blocking"]
-    return all(
-        i["code"] == "REQUIRED_MISSING" and i.get("field") in ENRICHABLE_REQUIRED for i in blockers
-    )
-
-
 @app.get("/jobs/<job_id>/analysis")
 def get_analysis(job_id: str) -> Any:
     job = load_job_for(current_user(), job_id, "/jobs/{id}/analysis")
@@ -178,17 +167,13 @@ def get_analysis(job_id: str) -> Any:
     ]
     return {
         "state": job["state"],
-        "editable": job["state"] == JobState.ANALYSIS_REVIEW,
+        "editable": job["state"] in REVIEW_STATES,
         "enrich": bool(job.get("enrich")),
         "summary": summarize(r.get("status", "ready") for r in rows),
         "issue_groups": groups,
         "campaigns": campaigns,
         "lead_sources": context.get("lead_sources", []),
-        "enrichment_lookup_count": sum(
-            1 for r in rows if not r.get("excluded") and _enrichment_eligible(r)
-        )
-        if job.get("enrich")
-        else 0,
+        "enrichment_lookup_count": sum(1 for r in rows if eligible(r)) if job.get("enrich") else 0,
         "notes": job.get("analysis_notes", []),
         "normalizer_version": context.get("normalizer_version"),
     }
@@ -237,6 +222,7 @@ class RowChange:
     restore: list[str] = field(default_factory=list)
     reason: str = "user_edit"
     accepted_suggestion: dict[str, Any] | None = None
+    enrichment_decision: str | None = None  # apply | skip (SPEC §15.4)
 
 
 def _ensure_campaigns(job: dict[str, Any], values: Sequence[str], user: User) -> None:
@@ -257,7 +243,7 @@ def _ensure_campaigns(job: dict[str, Any], values: Sequence[str], user: User) ->
         known[cid] = info.as_dict()
     d.jobs.update_in_state(
         job["job_id"],
-        JobState.ANALYSIS_REVIEW,
+        JobState(job["state"]),
         set_fields={"analysis_context": context},
         events=[
             AuditEvent(
@@ -299,6 +285,7 @@ def apply_changes(
     together with its audit events. Returns the updated rows by ID."""
     d = deps()
     job_id = job["job_id"]
+    state = JobState(job["state"])
     for change in changes.values():
         if "campaign_id" in change.edits:
             _ensure_campaigns(job, [change.edits["campaign_id"]], user)
@@ -327,6 +314,13 @@ def apply_changes(
                 )
             if change.excluded is not None:
                 new["excluded"] = change.excluded
+            if change.enrichment_decision:
+                new["enrichment"] = {
+                    **(new.get("enrichment") or {}),
+                    "decision": change.enrichment_decision,
+                    "decided_by": user.email,
+                    "decided_at": at,
+                }
             dismissed = set(new.get("dismissed", [])) | set(change.dismiss)
             new["dismissed"] = sorted(dismissed - set(change.restore))
             updated[rid] = new
@@ -385,6 +379,23 @@ def apply_changes(
                         correlation_id=correlation_id(),
                     )
                 )
+            if change.enrichment_decision:
+                events.append(
+                    AuditEvent(
+                        event_type=EventType.ENRICHMENT_DECISION,
+                        actor=user.actor(),
+                        job_id=job_id,
+                        row_id=rid,
+                        details={
+                            "decision": change.enrichment_decision,
+                            "match_status": (before.get("enrichment") or {}).get("match_status"),
+                            "score": (before.get("enrichment") or {}).get("score"),
+                        },
+                        reason=change.reason,
+                        lead_email=ev.processed.get("email"),
+                        correlation_id=correlation_id(),
+                    )
+                )
             if change.excluded is not None and change.excluded != bool(before.get("excluded")):
                 events.append(
                     AuditEvent(
@@ -410,7 +421,7 @@ def apply_changes(
             )
         )
         writes = [
-            d.jobs.condition_in_state(job_id, JobState.ANALYSIS_REVIEW),
+            d.jobs.condition_in_state(job_id, state),
             {"Put": {"TableName": d.rows.table_name, "Item": item}},
         ]
         if not events:
@@ -421,7 +432,7 @@ def apply_changes(
     all_rows = {**rows, **written}
     d.jobs.update_cached(
         job_id,
-        JobState.ANALYSIS_REVIEW,
+        state,
         {"summary": summarize(r.get("status", "ready") for r in all_rows.values())},
     )
     return written
@@ -430,7 +441,7 @@ def apply_changes(
 def _review_job(job_id: str, route: str) -> tuple[User, dict[str, Any]]:
     user = current_user()
     job = load_job_for(user, job_id, route)
-    if job["state"] != JobState.ANALYSIS_REVIEW:
+    if job["state"] not in REVIEW_STATES:
         raise _Conflict(messages.ROW_NOT_EDITABLE)
     return user, job
 
