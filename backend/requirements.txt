@@ -1,0 +1,4 @@
+# Runtime deps bundled into Lambda assets (boto3 is provided by the Lambda runtime).
+aws-lambda-powertools[tracer]>=3.0
+pydantic>=2.7
+anthropic>=1.8.0

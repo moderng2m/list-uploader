@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+cdk.out/
+cdk.context.json
+node_modules/
+frontend/dist/
+.DS_Store
+.env
+.env.*
+
+# Real lead data must never be committed (see CLAUDE.md).
+*.xlsx
+*.csv
+!backend/tests/fixtures/synthetic/**
+!frontend/public/*.xlsx

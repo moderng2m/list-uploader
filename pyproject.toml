@@ -1,0 +1,53 @@
+[project]
+name = "list-uploader"
+version = "0.1.0"
+description = "Guided lead-list upload to Eloqua via Workato"
+requires-python = ">=3.11"
+dependencies = [
+    "aws-lambda-powertools[tracer]>=3.0",
+    "pydantic>=2.7",
+    "boto3>=1.34",
+    "anthropic>=1.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "moto[dynamodb,s3]>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[dynamodb,bedrock-runtime,firehose]>=1.34",
+]
+infra = [
+    "aws-cdk-lib>=2.160",
+    "constructs>=10",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev", "infra"]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend", "."]
+testpaths = ["backend/tests", "infra/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["cdk.out", "build", "frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["shared", "bff", "audit_archiver", "tests", "infra"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "backend"
+packages = ["shared", "bff", "audit_archiver", "infra"]
+explicit_package_bases = true
+exclude = ["infra/tests/"]
+strict = true
+ignore_missing_imports = true
