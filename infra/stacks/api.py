@@ -77,7 +77,21 @@ class ApiStack(Stack):
         )
         storage.jobs.grant_read_write_data(self.parse_task)
         storage.rows.grant_write_data(self.parse_task)
+        storage.config_table.grant_read_data(self.parse_task)  # aliases, thresholds
         storage.uploads.grant_read(self.parse_task)
+        if cfg.integrations != "fake":
+            # Column-mapping suggestions. Dev uses the in-process fake and gets no
+            # Bedrock access at all. TODO(P7): confirm the exact actions the Mantle
+            # endpoint checks, and scope to the configured model's ARN.
+            self.parse_task.add_to_role_policy(
+                iam.PolicyStatement(
+                    actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                    resources=[
+                        f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                        f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/*",
+                    ],
+                )
+            )
         grant_audit_append(self.parse_task.role, storage.audit_events)  # type: ignore[arg-type]
         storage.key.grant_encrypt_decrypt(self.parse_task)
 

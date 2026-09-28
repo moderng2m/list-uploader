@@ -1,6 +1,7 @@
 // Synthetic data only. Never put real lead data here (see CLAUDE.md).
 import type {
   AdminConfig,
+  CatalogField,
   Analysis,
   Enrichment,
   GateResult,
@@ -84,29 +85,51 @@ export const jobs: Job[] = [
   },
 ];
 
+// Mirrors backend/shared/catalog.py.
+export const catalog: CatalogField[] = [
+  { key: "company", label: "Company", description: "Employer / organization name", required: true, must_map: true, fill_when_unmapped: null },
+  { key: "first_name", label: "First name", description: "Person's given name", required: true, must_map: true, fill_when_unmapped: null },
+  { key: "last_name", label: "Last Name", description: "Person's family name / surname", required: true, must_map: true, fill_when_unmapped: null },
+  { key: "email", label: "Email Address", description: "Person's business email address", required: true, must_map: true, fill_when_unmapped: null },
+  { key: "lead_source", label: "Lead Source - Most Recent", description: "Marketing lead source picklist value", required: true, must_map: false, fill_when_unmapped: "derived from the Salesforce campaign type" },
+  { key: "campaign_id", label: "SFDC Last Campaign ID", description: "Salesforce campaign ID", required: true, must_map: true, fill_when_unmapped: null },
+  { key: "title", label: "Title", description: "Job title", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "phone", label: "Business Phone", description: "Business / work / direct phone number", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "mobile_phone", label: "Mobile Phone", description: "Mobile / cell phone number", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "address_line_1", label: "Address 1", description: "Street address", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "city", label: "City", description: "City", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "state_province", label: "State or Province", description: "State, province, or region", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "postal_code", label: "Zip or Postal Code", description: "ZIP or postal code", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "country", label: "Country", description: "Country name or code", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "notes", label: "Notes additional Information", description: "Free-text notes about the lead", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "zi_contact_id", label: "Zoom Individual ID", description: "ZoomInfo person/contact ID (digits)", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "zi_company_id", label: "Zoom Company ID", description: "ZoomInfo company ID (digits)", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "campaign_status", label: "SFDC Last Campaign Status", description: "Campaign member status", required: true, must_map: false, fill_when_unmapped: "blank statuses use the campaign's default status" },
+  { key: "naics_code", label: "NAICS Code", description: "Industry classification code, 2-6 digits", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "industry", label: "Industry", description: "Industry name", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "website", label: "Website", description: "Company website URL or domain", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "employee_count", label: "Number of Employees", description: "Company employee count or range", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "list_name", label: "SFDC List Name", description: "Name of the Salesforce list", required: true, must_map: false, fill_when_unmapped: "generated from campaign name, date, and uploader" },
+  { key: "last_response_class", label: "Last Response Class", description: "Marketing response classification", required: false, must_map: false, fill_when_unmapped: null },
+  { key: "campaign_name", label: "SFDC Last Campaign Name", description: "Salesforce campaign name", required: true, must_map: false, fill_when_unmapped: "taken from Salesforce" },
+  { key: "linkedin_url", label: "LinkedIn", description: "Person's LinkedIn profile URL", required: false, must_map: false, fill_when_unmapped: null },
+];
+
 export const mapping: Mapping = {
   columns: [
     { source_header: "Company", samples: ["Acme Demo Co", "Globex Test Inc", "Initech Sample"], field_key: "company", method: "exact", confidence: null },
     { source_header: "First name", samples: ["Ada", "Grace", "Alan"], field_key: "first_name", method: "exact", confidence: null },
     { source_header: "Last Name", samples: ["Example", "Sample", "Placeholder"], field_key: "last_name", method: "exact", confidence: null },
     { source_header: "E-mail", samples: ["ada@example.com", "grace@example.org", "alan@example.net"], field_key: "email", method: "alias", confidence: null },
-    { source_header: "Job Position", samples: ["VP Marketing", "Director, Ops", "CFO"], field_key: "title", method: "ai", confidence: 0.87 },
+    { source_header: "Job Position", samples: ["VP Marketing", "Director, Ops", "CFO"], field_key: "title", method: "ai", confidence: 0.87, reason: "Header and values look like job titles." },
     { source_header: "SFDC Last Campaign ID", samples: [CAMPAIGN_A, CAMPAIGN_B, CAMPAIGN_A], field_key: "campaign_id", method: "exact", confidence: null },
     { source_header: "Badge Color", samples: ["blue", "red", "blue"], field_key: null, method: "none", confidence: null },
   ],
-  catalog: [
-    { key: "company", label: "Company", required: true },
-    { key: "first_name", label: "First name", required: true },
-    { key: "last_name", label: "Last Name", required: true },
-    { key: "email", label: "Email Address", required: true },
-    { key: "lead_source", label: "Lead Source - Most Recent", required: false },
-    { key: "campaign_id", label: "SFDC Last Campaign ID", required: true },
-    { key: "campaign_status", label: "SFDC Last Campaign Status", required: false },
-    { key: "list_name", label: "SFDC List Name", required: true },
-    { key: "title", label: "Title", required: false },
-    { key: "phone", label: "Business Phone", required: false },
-    { key: "campaign_name", label: "SFDC Last Campaign Name", required: false },
-  ],
+  catalog,
+  confirmed: false,
+  confirmed_at: null,
+  editable: true,
+  ai_note: null,
 };
 
 export const analysis: Analysis = {

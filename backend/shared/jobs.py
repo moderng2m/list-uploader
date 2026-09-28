@@ -195,16 +195,6 @@ class JobRepo:
         """
         if to_state not in ALLOWED.get(from_state, frozenset()):
             raise InvalidTransition(f"{from_state} -> {to_state}")
-        fields = {"state": str(to_state), "updated_at": now_iso(), **(set_fields or {})}
-        names = {f"#f{i}": name for i, name in enumerate(fields)}
-        values = {f":v{i}": value for i, value in enumerate(fields.values())}
-        expr = "SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(fields)))
-        if remove_fields:
-            remove_names = {f"#r{i}": name for i, name in enumerate(remove_fields)}
-            names.update(remove_names)
-            expr += " REMOVE " + ", ".join(remove_names)
-        names["#state"] = "state"
-        values[":from"] = str(from_state)
         change = AuditEvent(
             event_type=EventType.JOB_STATE_CHANGED,
             actor=actor,
@@ -214,15 +204,49 @@ class JobRepo:
             details=details,
             correlation_id=correlation_id,
         )
+        self.update_in_state(
+            job_id,
+            from_state,
+            set_fields={"state": str(to_state), **(set_fields or {})},
+            remove_fields=remove_fields,
+            events=[*events, change],
+        )
+
+    def update_in_state(
+        self,
+        job_id: str,
+        state: JobState,
+        *,
+        set_fields: dict[str, Any],
+        events: Sequence[AuditEvent],
+        remove_fields: Sequence[str] = (),
+    ) -> None:
+        """Update a job only if it is in `state`, atomically with its audit events.
+
+        Raises `StateConflict` if the job isn't in `state`, `AuditWriteError` if
+        the audit write fails; in both cases nothing is written.
+        """
+        if not events:
+            raise ValueError("every job update must carry at least one audit event")
+        fields = {"updated_at": now_iso(), **set_fields}
+        names = {f"#f{i}": name for i, name in enumerate(fields)}
+        values = {f":v{i}": value for i, value in enumerate(fields.values())}
+        expr = "SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(fields)))
+        if remove_fields:
+            remove_names = {f"#r{i}": name for i, name in enumerate(remove_fields)}
+            names.update(remove_names)
+            expr += " REMOVE " + ", ".join(remove_names)
+        names["#state"] = "state"
+        values[":expected"] = str(state)
         self.audit.transact(
-            [*events, change],
+            events,
             [
                 {
                     "Update": {
                         "TableName": self.table_name,
                         "Key": {"job_id": job_id},
                         "UpdateExpression": expr,
-                        "ConditionExpression": "#state = :from",
+                        "ConditionExpression": "#state = :expected",
                         "ExpressionAttributeNames": names,
                         "ExpressionAttributeValues": values,
                     }

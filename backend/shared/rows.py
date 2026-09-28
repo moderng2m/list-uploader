@@ -48,6 +48,10 @@ class RowRepo:
                 count += 1
         return count
 
+    def first(self, job_id: str, limit: int) -> list[dict[str, Any]]:
+        resp = self._table.query(KeyConditionExpression=Key("job_id").eq(job_id), Limit=limit)
+        return [plain(i) for i in resp.get("Items", [])]
+
     def list(self, job_id: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         kwargs: dict[str, Any] = {"KeyConditionExpression": Key("job_id").eq(job_id)}

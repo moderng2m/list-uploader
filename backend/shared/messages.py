@@ -67,3 +67,14 @@ PARSE_SYSTEM_ERROR = (
     "Something went wrong reading this file. Try uploading it again; if it keeps happening, "
     "contact Marketing Tech Ops."
 )
+
+# --- Column mapping (SPEC §6.2, §10) ---
+MAPPING_AI_UNAVAILABLE = (
+    "Automatic suggestions weren't available for this file, so some columns aren't mapped "
+    "yet. Choose a field for each column you want to keep."
+)
+MAPPING_NOT_READY = "This file is still being read. Wait a moment and refresh."
+MAPPING_LOCKED = (
+    "The mapping for this upload is already confirmed and analysis has started, so it can't "
+    "be changed."
+)

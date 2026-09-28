@@ -19,7 +19,7 @@ export type JobState =
 
 export type RowStatus = "ready" | "warning" | "blocked" | "excluded" | "pending_enrichment";
 export type Severity = "blocking" | "warning" | "info";
-export type MatchMethod = "exact" | "alias" | "ai" | "none";
+export type MatchMethod = "exact" | "alias" | "ai" | "manual" | "none";
 
 export interface Me {
   email: string;
@@ -80,7 +80,12 @@ export interface CreatedJob {
 export interface CatalogField {
   key: string;
   label: string;
+  description: string;
   required: boolean;
+  /** Required and has no automatic fill: the file must have a column for it. */
+  must_map: boolean;
+  /** For required fields that may stay unmapped: how they get filled. */
+  fill_when_unmapped: string | null;
 }
 
 export interface MappingColumn {
@@ -89,11 +94,16 @@ export interface MappingColumn {
   field_key: string | null;
   method: MatchMethod;
   confidence: number | null;
+  reason?: string | null;
 }
 
 export interface Mapping {
   columns: MappingColumn[];
   catalog: CatalogField[];
+  confirmed: boolean;
+  confirmed_at: string | null;
+  editable: boolean;
+  ai_note: string | null;
 }
 
 export interface Issue {

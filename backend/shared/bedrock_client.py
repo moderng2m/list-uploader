@@ -180,11 +180,12 @@ class FakeBedrockClient(BedrockClient):
     """Scripted responses for tests and the mock-only deployment.
 
     Each queued item is a JSON string, a pydantic model/dict (serialized), or an
-    Exception (raised). An empty queue returns "{}".
+    Exception (raised). An empty queue returns `default`.
     """
 
     responses: deque[Any] = field(default_factory=deque)
     model_id: str = "fake-model"
+    default: Any = "{}"
     prompts: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -196,7 +197,7 @@ class FakeBedrockClient(BedrockClient):
 
     def _invoke_raw(self, system: str, prompt: str, schema: dict[str, Any]) -> RawResponse:
         self.prompts.append(prompt)
-        item = self.responses.popleft() if self.responses else "{}"
+        item = self.responses.popleft() if self.responses else self.default
         if isinstance(item, Exception):
             raise item
         if isinstance(item, BaseModel):

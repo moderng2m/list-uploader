@@ -1,6 +1,8 @@
-"""Parse an uploaded file into Rows (SPEC §6.1, §7.1). Invoked async by the BFF.
+"""Parse an uploaded file into Rows and suggest a column mapping (SPEC §6.1, §7.1, §10).
 
-UPLOADED -> MAPPING_REVIEW on success, UPLOADED -> PARSE_FAILED otherwise.
+Invoked async by the BFF. UPLOADED -> MAPPING_REVIEW on success,
+UPLOADED -> PARSE_FAILED otherwise. The mapping suggestion (exact -> alias ->
+AI) runs here rather than in the BFF because the AI step can take seconds.
 Safe to re-run: it does nothing unless the job is still UPLOADED, and row
 writes overwrite the same keys.
 """
@@ -17,10 +19,16 @@ import boto3
 
 from shared import config_defaults, messages
 from shared.audit import Actor, AuditEvent, AuditWriter, EventType
+from shared.bedrock_client import BedrockClient, BedrockMantleClient
+from shared.config_store import ConfigStore
+from shared.fake_ai import HeuristicFakeBedrock
 from shared.jobs import JobRepo, JobState
+from shared.mapping import MappingSuggestion, suggest
 from shared.observability import logger, metrics, tracer
 from shared.parsing import ParseError, ParseResult, parse_file
 from shared.rows import RowRepo
+
+SAMPLES_PER_COLUMN = 5
 
 
 @dataclass
@@ -29,17 +37,22 @@ class ParseDeps:
     rows: RowRepo
     s3: Any
     uploads_bucket: str
+    bedrock: BedrockClient
+    config: ConfigStore
     max_bytes: int = config_defaults.LIMITS["max_file_bytes"]
     max_rows: int = config_defaults.LIMITS["max_rows"]
 
     @classmethod
     def from_env(cls) -> ParseDeps:
         audit = AuditWriter()
+        fake = os.environ.get("INTEGRATIONS", "fake") == "fake"
         return cls(
             jobs=JobRepo(audit),
             rows=RowRepo(),
             s3=boto3.client("s3"),
             uploads_bucket=os.environ["UPLOADS_BUCKET"],
+            bedrock=HeuristicFakeBedrock() if fake else BedrockMantleClient(),
+            config=ConfigStore(),
         )
 
 
@@ -58,6 +71,64 @@ def _parse_summary(result: ParseResult) -> dict[str, Any]:
         "warnings": [w.as_dict() for w in result.warnings],
         "row_issue_count": result.row_issue_count(),
     }
+
+
+def column_samples(result: ParseResult, limit: int = SAMPLES_PER_COLUMN) -> dict[str, list[str]]:
+    """First few non-empty values per column. Used for the AI prompt only; never stored."""
+    samples: dict[str, list[str]] = {h: [] for h in result.headers}
+    for row in result.rows:
+        for header, value in row.values.items():
+            if value.strip() and len(samples[header]) < limit:
+                samples[header].append(value)
+    return samples
+
+
+def _suggest_mapping(result: ParseResult, deps: ParseDeps) -> MappingSuggestion:
+    thresholds = deps.config.thresholds()
+    return suggest(
+        result.headers,
+        column_samples(result),
+        aliases=deps.config.aliases(),
+        threshold=thresholds["mapping_suggest_threshold"],
+        bedrock=deps.bedrock,
+    )
+
+
+def _mapping_events(job_id: str, mapping: MappingSuggestion, actor: Actor) -> list[AuditEvent]:
+    events = []
+    if mapping.ai.result is not None:
+        events.append(
+            AuditEvent(
+                event_type=EventType.AI_INVOCATION,
+                actor=actor,
+                job_id=job_id,
+                details=mapping.ai.result.audit_details(row_count=mapping.ai.columns_sent),
+            )
+        )
+    events.append(
+        AuditEvent(
+            event_type=EventType.MAPPING_SUGGESTED,
+            actor=actor,
+            job_id=job_id,
+            details={
+                "columns": [
+                    {
+                        "source_header": c.source_header,
+                        "field_key": c.field_key,
+                        "method": str(c.method),
+                        "confidence": c.confidence,
+                    }
+                    for c in mapping.columns
+                ],
+                "method_counts": mapping.method_counts(),
+                "alias_version": mapping.alias_version,
+                "catalog_version": mapping.catalog_version,
+                "threshold": mapping.threshold,
+                "ai_outcome": mapping.ai.outcome,
+            },
+        )
+    )
+    return events
 
 
 def run(job_id: str, deps: ParseDeps) -> str:
@@ -82,6 +153,7 @@ def run(job_id: str, deps: ParseDeps) -> str:
             details={**file_info, "s3_key": job["upload_key"]},
         )
         result = parse_file(data, job["filename"], max_bytes=deps.max_bytes, max_rows=deps.max_rows)
+        mapping = _suggest_mapping(result, deps)
     except ParseError as err:
         _fail(deps, job_id, err.code, err.message, file_info, system)
         return JobState.PARSE_FAILED
@@ -99,7 +171,11 @@ def run(job_id: str, deps: ParseDeps) -> str:
         JobState.UPLOADED,
         JobState.MAPPING_REVIEW,
         actor=system,
-        set_fields={"file": file_info, "parse": summary},
+        set_fields={
+            "file": file_info,
+            "parse": summary,
+            "mapping_suggestion": mapping.as_dict(),
+        },
         events=[
             uploaded,
             AuditEvent(
@@ -116,9 +192,12 @@ def run(job_id: str, deps: ParseDeps) -> str:
                     "warnings": dict(warning_codes),
                 },
             ),
+            *_mapping_events(job_id, mapping, system),
         ],
     )
     metrics.add_metric(name="JobsReachedMapping", unit="Count", value=1)
+    for method, count in mapping.method_counts().items():
+        metrics.add_metric(name=f"MappingColumns_{method}", unit="Count", value=count)
     metrics.add_metric(name="RowsPerJob", unit="Count", value=len(result.rows))
     logger.info(
         "parsed", extra={"job_id": job_id, "row_count": len(result.rows), "type": result.file_type}

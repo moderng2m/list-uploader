@@ -1,30 +1,19 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
-from bff.app import BffDeps, set_deps
+from bff.app import set_deps
 from shared.audit import AuditWriter
-from tests.conftest import UPLOADS_BUCKET, Env
+from tests.conftest import Env
 from tests.helpers import ADMIN, UPLOADER, call, http_event
 
 
 @pytest.fixture
-def bff(env: Env) -> Iterator[Env]:
-    set_deps(
-        BffDeps(
-            audit=env.audit,
-            jobs=env.jobs,
-            s3=env.s3,
-            uploads_bucket=UPLOADS_BUCKET,
-            start_parse=env.parse_requests.append,
-        )
-    )
-    yield env
-    set_deps(None)
+def bff(app_env: Env) -> Env:
+    return app_env
 
 
 def test_me(bff: Env) -> None:
@@ -50,15 +39,7 @@ def test_non_admin_is_denied_and_audited(bff: Env) -> None:
 def test_audit_failure_fails_the_request(bff: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     broken = AuditWriter("missing-table", env="dev", app_version="t")
     monkeypatch.setattr(bff.jobs, "audit", broken)
-    set_deps(
-        BffDeps(
-            audit=broken,
-            jobs=bff.jobs,
-            s3=bff.s3,
-            uploads_bucket=UPLOADS_BUCKET,
-            start_parse=bff.parse_requests.append,
-        )
-    )
+    set_deps(bff.bff_deps(audit=broken))
     assert call(http_event("GET", "/admin/config", groups=UPLOADER))[0] == 503
 
 

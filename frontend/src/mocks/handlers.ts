@@ -77,6 +77,17 @@ export const handlers = [
       : HttpResponse.json({ message: "We couldn't find that upload." }, { status: 404 });
   }),
   http.get(u("/jobs/:id/mapping"), () => HttpResponse.json(f.mapping)),
+  http.put(u("/jobs/:id/mapping"), async ({ request }) => {
+    const body = (await request.json()) as { columns: { source_header: string; field_key: string | null }[] };
+    const used = new Set(body.columns.map((c) => c.field_key).filter(Boolean));
+    const missing = f.catalog.filter((c) => c.must_map && !used.has(c.key)).map((c) => c.label);
+    if (missing.length)
+      return HttpResponse.json(
+        { message: `Map these required fields before you continue: ${missing.join(", ")}.` },
+        { status: 400 },
+      );
+    return HttpResponse.json({ ...f.mapping, confirmed: true, confirmed_at: new Date().toISOString() });
+  }),
   http.get(u("/jobs/:id/analysis"), () => HttpResponse.json(f.analysis)),
   http.get(u("/jobs/:id/enrichment"), () => HttpResponse.json(f.enrichment)),
   http.get(u("/jobs/:id/gate"), () => HttpResponse.json(f.gate)),

@@ -143,3 +143,6 @@ select { font: inherit; padding: 0.3rem; max-width: 100%; background: var(--surf
 .small { font-size: 0.85em; }
 .file-details p { margin: 0; }
 .warnings { margin: 0.5rem 0 0; color: var(--warn); }
+.badge-manual { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.note { background: var(--info-bg); color: var(--info); border-color: transparent; }
+aside h3 { margin-top: 1rem; font-size: 0.95rem; }

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from bff.app import BffDeps, set_deps
 from shared.audit import AuditWriter
 from shared.jobs import JobState
 from tasks.parse_file import ParseDeps, run
@@ -21,24 +19,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "synthetic"
 OWNER = "uploader@example.com"
 
 
-@pytest.fixture
-def app_env(env: Env) -> Iterator[Env]:
-    set_deps(
-        BffDeps(
-            audit=env.audit,
-            jobs=env.jobs,
-            s3=env.s3,
-            uploads_bucket=UPLOADS_BUCKET,
-            start_parse=env.parse_requests.append,
-        )
-    )
-    yield env
-    set_deps(None)
-
-
 def _parse_deps(env: Env, **kw: Any) -> ParseDeps:
-    kw.setdefault("uploads_bucket", UPLOADS_BUCKET)
-    return ParseDeps(jobs=env.jobs, rows=env.rows, s3=env.s3, **kw)
+    return env.parse_deps(**kw)  # type: ignore[no-any-return]
 
 
 def _create(filename: str = "leads.xlsx", enrich: bool = True) -> dict[str, Any]:
@@ -120,6 +102,7 @@ class TestUploadAndParse:
             "JOB_STATE_CHANGED",  # -> UPLOADED
             "FILE_UPLOADED",
             "FILE_PARSED",
+            "MAPPING_SUGGESTED",  # template: all exact, so no AI_INVOCATION
             "JOB_STATE_CHANGED",  # -> MAPPING_REVIEW
         ]
 

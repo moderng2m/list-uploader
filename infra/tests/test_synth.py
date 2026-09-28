@@ -185,3 +185,31 @@ def test_parse_task_wiring(stacks: dict[str, Stack]) -> None:
         for a in _as_list(stmt["Action"])
     }
     assert {"lambda:InvokeFunction", "s3:PutObjectRetention"} <= actions
+
+
+def test_dev_has_no_bedrock_access(stacks: dict[str, Stack]) -> None:
+    for name, template in _templates(stacks).items():
+        for stmt in _statements(template):
+            actions = " ".join(_as_list(stmt["Action"]))
+            assert "bedrock:" not in actions, f"{name} grants Bedrock in dev"
+
+
+def test_parse_task_reads_config() -> None:
+    app = App(context={"aws:cdk:bundling-stacks": []})
+    built = build(app, get_config("dev"), deploy_web_assets=False)
+    api_json = Template.from_stack(built["api"]).to_json()  # type: ignore[arg-type]
+    storage_json = Template.from_stack(built["storage"]).to_json()  # type: ignore[arg-type]
+    config_id = next(lid for lid in storage_json["Resources"] if lid.startswith("Config"))
+    grants = [
+        s for s in _statements(api_json)
+        if config_id in json.dumps(s.get("Resource")) and s["Effect"] == "Allow"
+    ]  # fmt: skip
+    assert any("dynamodb:GetItem" in _as_list(s["Action"]) for s in grants)
+
+
+def test_prod_parse_task_can_call_bedrock() -> None:
+    app = App(context={"aws:cdk:bundling-stacks": []})
+    built = build(app, get_config("prod"), deploy_web_assets=False)
+    api_json = Template.from_stack(built["api"]).to_json()  # type: ignore[arg-type]
+    actions = {a for s in _statements(api_json) for a in _as_list(s["Action"])}
+    assert "bedrock:InvokeModel" in actions

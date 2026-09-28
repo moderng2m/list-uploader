@@ -16,6 +16,7 @@ os.environ.setdefault("POWERTOOLS_METRICS_NAMESPACE", "ListUploader")
 os.environ.setdefault("ENV", "dev")
 
 AUDIT_TABLE = "AuditEvents-test"
+CONFIG_TABLE = "Config-test"
 JOBS_TABLE = "Jobs-test"
 ROWS_TABLE = "Rows-test"
 UPLOADS_BUCKET = "uploads-test"
@@ -76,6 +77,11 @@ def rows_table(aws: None) -> Any:
 
 
 @pytest.fixture
+def config_table(aws: None) -> Any:
+    return _table(CONFIG_TABLE, ("pk", "S"), ("sk", "S"))
+
+
+@pytest.fixture
 def uploads_bucket(aws: None) -> str:
     boto3.client("s3").create_bucket(Bucket=UPLOADS_BUCKET, ObjectLockEnabledForBucket=True)
     return UPLOADS_BUCKET
@@ -92,7 +98,37 @@ class Env:
     audit_table: Any
     jobs_table: Any
     rows_table: Any
+    config: Any
+    bedrock: Any
     parse_requests: list[str] = field(default_factory=list)
+
+    def bff_deps(self, **overrides: Any) -> Any:
+        from bff.app import BffDeps
+
+        kwargs: dict[str, Any] = {
+            "audit": self.audit,
+            "jobs": self.jobs,
+            "rows": self.rows,
+            "s3": self.s3,
+            "uploads_bucket": UPLOADS_BUCKET,
+            "start_parse": self.parse_requests.append,
+            **overrides,
+        }
+        return BffDeps(**kwargs)
+
+    def parse_deps(self, **overrides: Any) -> Any:
+        from tasks.parse_file import ParseDeps
+
+        kwargs: dict[str, Any] = {
+            "jobs": self.jobs,
+            "rows": self.rows,
+            "s3": self.s3,
+            "uploads_bucket": UPLOADS_BUCKET,
+            "bedrock": self.bedrock,
+            "config": self.config,
+            **overrides,
+        }
+        return ParseDeps(**kwargs)
 
     def audit_types(self, job_id: str) -> list[str]:
         items = self.audit_table.query(
@@ -102,8 +138,12 @@ class Env:
 
 
 @pytest.fixture
-def env(audit_table: Any, jobs_table: Any, rows_table: Any, uploads_bucket: str) -> Env:
+def env(
+    audit_table: Any, jobs_table: Any, rows_table: Any, config_table: Any, uploads_bucket: str
+) -> Env:
     from shared.audit import AuditWriter
+    from shared.bedrock_client import FakeBedrockClient
+    from shared.config_store import ConfigStore
     from shared.jobs import JobRepo
     from shared.rows import RowRepo
 
@@ -116,4 +156,17 @@ def env(audit_table: Any, jobs_table: Any, rows_table: Any, uploads_bucket: str)
         audit_table=audit_table,
         jobs_table=jobs_table,
         rows_table=rows_table,
+        config=ConfigStore(CONFIG_TABLE),
+        # No AI suggestions unless a test queues some.
+        bedrock=FakeBedrockClient(default='{"items": []}'),
     )
+
+
+@pytest.fixture
+def app_env(env: Env) -> Iterator[Env]:
+    """`env` with the BFF wired to it."""
+    from bff.app import set_deps
+
+    set_deps(env.bff_deps())
+    yield env
+    set_deps(None)

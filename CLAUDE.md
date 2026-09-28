@@ -30,13 +30,17 @@ backend/                 Python 3.12 Lambdas (imports are rooted at backend/)
     workato_client.py    WorkatoClient protocol, guards, FakeWorkatoClient
     bedrock_client.py    JSON-only Claude calls (validate, retry once, degrade)
     parsing.py           CSV/XLSX -> string rows (SPEC §7.1); no type inference
+    catalog.py           field catalog (SPEC §8), seed aliases, header normalization
+    mapping.py           exact -> alias -> AI column mapping; confirmation rules
+    config_store.py      Config table reads (aliases, thresholds) with seed fallback
+    fake_ai.py           HeuristicFakeBedrock: the "AI" in dev (INTEGRATIONS=fake)
     jobs.py              JobState machine; JobRepo (state change + audit in one txn)
     rows.py              Rows table access
     messages.py          all user-facing text (SPEC §20)
     config_defaults.py   thresholds and limits (SPEC §14.4)
     lead_normalizer/     normalizer v5 goes here unmodified (P3)
   bff/                   API Gateway router (Powertools APIGatewayHttpResolver)
-  tasks/                 async task Lambdas (parse_file: UPLOADED -> MAPPING_REVIEW)
+  tasks/                 async task Lambdas (parse_file: parse + suggest mapping)
   audit_archiver/        AuditEvents stream -> Firehose -> S3 archive
   tests/                 pytest + moto
     fixtures/synthetic/  generated sample files (make fixtures); never real data
@@ -102,8 +106,28 @@ Deviations from the spec, on purpose:
 - US ZIP leading-zero restore (§7.1) runs after mapping (P2/P3), since it needs to
   know which column is the ZIP and which is the country.
 
+## Column mapping (P2)
+
+The parse task suggests the mapping right after parsing (exact -> alias -> AI),
+so the slow AI step never runs in the BFF. Sample values go to the AI prompt
+only; they are never stored on the job or in audit events. `GET /jobs/{id}/mapping`
+reads samples from the first Rows. `PUT` validates (known headers and fields,
+one-to-one, must-map fields present) and records MAPPING_CONFIRMED plus
+SUGGESTION_ACCEPTED/REJECTED per AI column. The job stays in MAPPING_REVIEW;
+`POST /analyze` (P3) moves it on.
+
+Must-map fields: company, first_name, last_name, email, campaign_id. Required
+fields that may stay unmapped (`fill_when_unmapped`): lead_source, campaign_status,
+list_name, campaign_name. Including list_name and campaign_status goes beyond
+BUILD_PLAN's "Campaign Name and Lead Source exempt"; both have a spec-defined
+fill (OQ-2, §8 footnote).
+
+The frontend mock catalog must match `catalog.py`;
+`backend/tests/test_frontend_contract.py` enforces it.
+
 ## Phase status
 
 - P0 scaffold: done.
 - P1 upload and parse: done.
-- Next: P2 (column mapping).
+- P2 column mapping: done.
+- Next: P3 (analysis). Needs the lead normalizer v5 from Brandon.

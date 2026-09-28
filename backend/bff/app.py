@@ -20,6 +20,7 @@ from bff.auth import User, user_from_event
 from shared import config_defaults, messages
 from shared.audit import AuditEvent, AuditWriteError, AuditWriter, EventType, StateConflict
 from shared.jobs import InvalidTransition, JobRepo
+from shared.rows import RowRepo
 
 app = APIGatewayHttpResolver()
 
@@ -31,6 +32,7 @@ class BffDeps:
     s3: Any
     uploads_bucket: str
     start_parse: Callable[[str], None]
+    rows: RowRepo
     raw_file_retention_days: int = 90
     max_bytes: int = config_defaults.LIMITS["max_file_bytes"]
 
@@ -53,6 +55,7 @@ class BffDeps:
             s3=boto3.client("s3"),
             uploads_bucket=os.environ["UPLOADS_BUCKET"],
             start_parse=start_parse,
+            rows=RowRepo(),
             raw_file_retention_days=int(os.environ.get("RAW_FILE_RETENTION_DAYS", "90")),
         )
 

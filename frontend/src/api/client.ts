@@ -46,6 +46,8 @@ export const api = {
     }),
   markUploaded: (id: string) => request<Job>(`/jobs/${id}/uploaded`, { method: "POST" }),
   getMapping: (id: string) => request<Mapping>(`/jobs/${id}/mapping`),
+  confirmMapping: (id: string, columns: { source_header: string; field_key: string | null }[]) =>
+    request<Mapping>(`/jobs/${id}/mapping`, { method: "PUT", body: JSON.stringify({ columns }) }),
   getAnalysis: (id: string) => request<Analysis>(`/jobs/${id}/analysis`),
   getEnrichment: (id: string) => request<Enrichment>(`/jobs/${id}/enrichment`),
   getGate: (id: string) => request<GateResult>(`/jobs/${id}/gate`),
