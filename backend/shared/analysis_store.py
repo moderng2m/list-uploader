@@ -19,7 +19,7 @@ EVALUATED_KEYS = ("processed", "provenance", "issues", "status")
 
 
 def campaign_info(c: Campaign) -> CampaignInfo:
-    statuses = sorted(c.member_statuses, key=lambda s: s.sort_order)
+    statuses = c.member_statuses  # Salesforce's order
     default = next((s.label for s in statuses if s.is_default), None)
     return CampaignInfo(
         id=c.id,

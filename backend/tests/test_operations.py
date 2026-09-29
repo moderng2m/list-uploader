@@ -35,7 +35,7 @@ def clear_metrics() -> Any:
 class TestWorkatoMetrics:
     def test_every_call_counts_and_failures_are_errors(self) -> None:
         workato = FakeWorkatoClient(env="dev", post_status={"j:3": 500})
-        workato.lookup_campaigns(["701000000000001AAA"], caller_job_id="j")
+        workato.lookup_campaign("701000000000001AAA", caller_job_id="j")
         for row in (2, 3):
             payload = {"source_record_id": f"j:{row}", "send_to_prod": False}
             assert isinstance(workato.post_to_eloqua(payload), PostResult)

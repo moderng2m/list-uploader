@@ -17,6 +17,7 @@ from shared.jobs import JobState, now_iso
 from shared.observability import metrics
 from shared.processed_file import build_csv
 from shared.sending import evaluate_gate
+from shared.workato_client import lookup_distinct
 
 SEND_FROM = REVIEW_STATES | {JobState.READY_TO_SEND}
 DOWNLOAD_URL_TTL = 300
@@ -66,10 +67,10 @@ def revalidate_campaigns(job_id: str) -> Any:
     d = deps()
     context = dict(job.get("analysis_context") or {})
     ids = sorted((context.get("campaigns") or {}).keys())
-    found = {}
-    for start in range(0, len(ids), 50):
-        for c in d.workato.lookup_campaigns(ids[start : start + 50], caller_job_id=job_id):
-            found[c.id] = campaign_info(c).as_dict()
+    found = {
+        cid: campaign_info(c).as_dict()
+        for cid, c in lookup_distinct(d.workato, ids, caller_job_id=job_id).items()
+    }
     context["campaigns"] = found
     context["campaigns_validated_at"] = now_iso()
     d.jobs.update_in_state(

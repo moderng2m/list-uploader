@@ -36,6 +36,7 @@ from shared.jobs import JobState, now_iso
 from shared.mapping import PROMPT_VERSION as MAPPING_PROMPT_VERSION
 from shared.observability import metrics
 from shared.sfdc_ids import check_campaign_id
+from shared.workato_client import lookup_distinct
 
 # Derived from Salesforce; the file can't override it (SPEC §8 footnote **).
 NOT_EDITABLE = frozenset({"campaign_name"})
@@ -294,8 +295,8 @@ def _ensure_campaigns(job: dict[str, Any], values: Sequence[str], user: User) ->
         return
     d = deps()
     found = {
-        c.id: campaign_info(c)
-        for c in d.workato.lookup_campaigns(new_ids, caller_job_id=job["job_id"])
+        cid: campaign_info(c)
+        for cid, c in lookup_distinct(d.workato, new_ids, caller_job_id=job["job_id"]).items()
     }
     for cid, info in found.items():
         known[cid] = info.as_dict()

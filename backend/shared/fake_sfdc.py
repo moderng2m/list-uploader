@@ -9,14 +9,16 @@ from __future__ import annotations
 from shared.workato_client import Campaign, MemberStatus
 
 _EVENT_STATUSES = (
-    MemberStatus("Registered", is_default=True, has_responded=False, sort_order=1),
-    MemberStatus("Attended", is_default=False, has_responded=True, sort_order=2),
-    MemberStatus("No Show", is_default=False, has_responded=False, sort_order=3),
+    MemberStatus("Registered", is_default=True, has_responded=False, id="01Y000000000001AAA"),
+    MemberStatus("Attended", is_default=False, has_responded=True, id="01Y000000000002AAA"),
+    MemberStatus("No Show", is_default=False, has_responded=False, id="01Y000000000003AAA"),
 )
 _WEBINAR_STATUSES = (
-    MemberStatus("Registered", is_default=True, has_responded=False, sort_order=1),
-    MemberStatus("Attended", is_default=False, has_responded=True, sort_order=2),
-    MemberStatus("Watched On Demand", is_default=False, has_responded=True, sort_order=3),
+    MemberStatus("Registered", is_default=True, has_responded=False, id="01Y000000000004AAA"),
+    MemberStatus("Attended", is_default=False, has_responded=True, id="01Y000000000005AAA"),
+    MemberStatus(
+        "Watched On Demand", is_default=False, has_responded=True, id="01Y000000000006AAA"
+    ),
 )
 
 CAMPAIGNS: dict[str, Campaign] = {

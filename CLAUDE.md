@@ -190,6 +190,13 @@ Decisions made while building P3 (spec gaps):
 - NOT_SENT_FIELD is one info issue per row listing every unsent field (OQ-1).
 - FIELD_FORMAT_INVALID (warning) is new: SPEC §11.2 values that can't be used.
 - The lead source list is a placeholder until admins maintain it (P6).
+- **Campaign lookup is one ID per call** (the MOps campaign lookup API recipe):
+  `lookup_distinct` makes one call per distinct valid 18-character ID (100 rows on
+  one campaign = 1 call; invalid IDs are never sent), at analysis, for IDs first
+  typed during review, and on "re-check campaigns". `parse_campaign_lookup` reads
+  the recipe's response (`input_id`, `valid_id`, `campaign_exists`, `campaign` with
+  name/type/status/is_active/member_statuses; extra fields ignored); the fake
+  answers in the same shape. Member statuses keep Salesforce's order.
 - The Rows grid shows every column of the file: `GET /analysis` returns `columns`
   (file order under the user's headers, ignored ones read only, then required
   fields the app fills in and any other field a row has a value for), and each row

@@ -43,7 +43,7 @@ from shared.normalizer import Normalizer, load_normalizer
 from shared.observability import logger, metrics, tracer
 from shared.rows import RowRepo
 from shared.sfdc_ids import check_campaign_id
-from shared.workato_client import MAX_CAMPAIGN_IDS, FakeWorkatoClient, WorkatoClient
+from shared.workato_client import FakeWorkatoClient, WorkatoClient, lookup_distinct
 
 LEAD_SOURCE_AI_BATCH = 100
 AUDIT_WRITERS = 16
@@ -117,12 +117,10 @@ def prepare(job_id: str, deps: AnalyzeDeps) -> dict[str, Any]:
             if (check := check_campaign_id(ev.processed.get("campaign_id", ""))).value
         }
     )
-    campaigns = {}
-    for start in range(0, len(ids), MAX_CAMPAIGN_IDS):
-        for c in deps.workato.lookup_campaigns(
-            ids[start : start + MAX_CAMPAIGN_IDS], caller_job_id=job_id
-        ):
-            campaigns[c.id] = campaign_info(c)
+    campaigns = {
+        cid: campaign_info(c)
+        for cid, c in lookup_distinct(deps.workato, ids, caller_job_id=job_id).items()
+    }
     events: list[AuditEvent] = [
         AuditEvent(
             event_type=EventType.CAMPAIGN_VALIDATED,

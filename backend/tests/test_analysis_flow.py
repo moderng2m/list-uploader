@@ -104,6 +104,11 @@ class TestAcceptance:
             "Campaign ID 701000000000009AAA wasn't found in Salesforce."
         )
         assert rows[3]["status"] == rows[4]["status"] == "blocked"
+        # One lookup per distinct valid campaign ID: rows 2, 5, 6 and 8 share one
+        # campaign (as 15- and 18-character IDs); the mistyped ID is never sent.
+        looked_up = [c[1] for c in app_env.workato.calls if c[0] == "lookup_campaign"]
+        assert len(looked_up) == len(set(looked_up))
+        assert EVENTS_ID in looked_up and "701000000000001AAB" not in looked_up
 
     def test_blank_status_uses_campaign_default(self, app_env: Env) -> None:
         row = _rows(_analyzed(app_env))[2]
@@ -364,7 +369,7 @@ class TestLifecycle:
 
     def test_workflow_failure_then_retry(self, app_env: Env) -> None:
         class Broken:
-            def lookup_campaigns(self, ids: list[str], *, caller_job_id: str) -> list[Any]:
+            def lookup_campaign(self, campaign_id: str, *, caller_job_id: str) -> Any:
                 raise RuntimeError("Workato down")
 
         _, body = call(http_event("POST", "/jobs", email=OWNER,
