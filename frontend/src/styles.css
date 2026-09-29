@@ -50,6 +50,7 @@ code { font-size: 0.9em; }
 h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
 h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
 h3 { font-size: 1rem; margin: 0 0 0.25rem; }
+.table-wrap + h3 { margin-top: 1.25rem; }
 
 .topbar {
   display: flex; align-items: center; gap: 1.5rem;
@@ -140,3 +141,89 @@ select { font: inherit; padding: 0.3rem; max-width: 100%; background: var(--surf
   .mock-banner { padding: 0.4rem 16px; }
 }
 .table-wrap { overflow-x: auto; padding: 0; }
+.small { font-size: 0.85em; }
+.file-details p { margin: 0; }
+.warnings { margin: 0.5rem 0 0; color: var(--warn); }
+.badge-manual { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.note { background: var(--info-bg); color: var(--info); border-color: transparent; }
+aside h3 { margin-top: 1rem; font-size: 0.95rem; }
+.chip { margin-left: 0.5rem; font-size: 0.8rem; padding: 0.1rem 0.5rem; border-radius: 999px; }
+.inline { display: inline-flex; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; }
+.rows-grid input:not([type="checkbox"]), .rows-grid select { width: 100%; min-width: 7rem; font: inherit; padding: 0.2rem; }
+.rows-grid tr.excluded td { opacity: 0.55; }
+.was { color: var(--muted); font-size: 0.8em; }
+.col-note { display: block; color: var(--muted); font-size: 0.75em; font-weight: normal; }
+.ignored-cell { color: var(--muted); }
+.grid-hint { font-size: 0.85em; margin: 0 0 0.4rem; }
+/* Keep the row number in view while scrolling sideways through many columns. */
+.rows-grid tr.row-main > td:first-child, .rows-grid thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.rows-grid tr.row-main.has-issues td { border-bottom: none; padding-bottom: 0.2rem; }
+.rows-grid tr.row-issues td { padding-top: 0; padding-left: 2.5rem; }
+.row-issue { font-size: 0.85em; margin-bottom: 0.35rem; }
+.row-issue button, .row-issue select { margin: 0.2rem 0.3rem 0 0; font-size: 0.85em; padding: 0.15rem 0.5rem; }
+.sev-text-blocking { color: var(--bad); }
+.sev-text-warning { color: var(--warn); }
+.sev-text-info { color: var(--muted); }
+.row-actions { white-space: nowrap; width: 1%; }
+.row-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }
+.row-actions label.check { display: flex; gap: 0.3rem; }
+.row-actions button { margin-right: 0.3rem; }
+.row-issue select { width: auto; min-width: 0; }
+.row-actions label.check { font-size: 0.85em; margin-top: 0.3rem; }
+.review-item tr.differs td:last-child { color: var(--warn); font-weight: 600; }
+.grid.compact td { overflow-wrap: anywhere; }
+
+/* Audit: timeline, row history drawer (P6) */
+.events { list-style: none; padding: 0; margin: 0; }
+.events > li { border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
+.event-head { font-size: 0.85em; }
+.event-summary { margin: 0.15rem 0; }
+.event-details summary { cursor: pointer; font-size: 0.85em; color: var(--muted); }
+.event-details dl { margin: 0.3rem 0 0; }
+.event-details dt { font-size: 0.8em; color: var(--muted); }
+.event-details dd { margin: 0 0 0.3rem; }
+.event-details pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8em; background: var(--bg); padding: 0.4rem; border-radius: 4px; }
+.drawer-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.3); display: flex; justify-content: flex-end; z-index: 10; }
+.drawer { background: var(--surface); width: min(40rem, 100%); height: 100%; overflow-y: auto; padding: 1rem; box-shadow: -2px 0 8px rgb(0 0 0 / 0.15); }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.drawer h3 { margin-top: 1rem; }
+.lineage-list > li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.lineage { list-style: none; padding: 0; margin: 0.15rem 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; }
+.lineage > li + li::before { content: "→ "; color: var(--muted); }
+.lineage-list .unexplained { background: var(--bad-bg); }
+.tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.inline-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.inline-form input { min-width: 0; flex: 1 1 12rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.3rem; list-style: none; padding: 0; margin: 0.25rem 0; }
+.chips li { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.2rem 0.05rem 0.6rem; font-size: 0.85em; }
+.chips button { border: none; background: none; padding: 0 0.3rem; font-size: 1em; }
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.5rem 1rem; }
+.filters label { display: flex; flex-direction: column; font-size: 0.85em; gap: 0.15rem; }
+.job-tabs { display: flex; justify-content: flex-end; margin: -0.5rem 0 0.5rem; }
+.steps { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; justify-content: space-between; align-items: flex-start; }
+.steps a.timeline-link.active { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+button.link { border: none; background: none; color: var(--accent); text-decoration: underline; padding: 0; font-size: 0.9em; }
+.ls-list > li { border-bottom: 1px solid var(--border); padding: 0.35rem 0; }
+.ls-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ls-value { overflow-wrap: anywhere; }
+.ls-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.ls-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }
+.whoami .link { margin-left: 0.75rem; }
+
+/* Analysis review: issues beside the rows on wide screens (stacked below 1100px). */
+.review-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (min-width: 1100px) {
+  .review-layout { grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); }
+  .review-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+}
+.review-side > .card { margin-bottom: 1rem; }
+.review-rows { scroll-margin-top: 1rem; }
+.issue-groups li.active { background: var(--info-bg); border-radius: 6px; padding-left: 0.5rem; padding-right: 0.5rem; }
+.filter-banner { background: var(--info-bg); color: var(--info); padding: 0.4rem 0.6rem; border-radius: 6px; margin: 0 0 0.75rem; }
+/* Keep a row's problem text inside the visible part of a wide, scrolling grid. */
+.row-issue { position: sticky; left: 0; max-width: min(46rem, calc(100vw - 7.5rem)); }
+@media (min-width: 1100px) { .row-issue { max-width: 40rem; } }
+/* Issue list: actions on their own line, compact. */
+.review-side .issue-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.35rem 0 0; }
+.review-side .issue-actions button { font-size: 0.85em; padding: 0.15rem 0.6rem; }

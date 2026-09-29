@@ -26,6 +26,7 @@ const methodLabel: Record<MatchMethod, string> = {
   exact: "Exact",
   alias: "Alias",
   ai: "AI suggested",
+  manual: "Chosen by you",
   none: "Not mapped",
 };
 

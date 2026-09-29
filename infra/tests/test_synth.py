@@ -70,14 +70,17 @@ def test_no_role_can_update_or_delete_audit_events(stacks: dict[str, Stack]) -> 
     assert checked > 0, "expected at least one grant on AuditEvents"
 
 
-def test_bff_has_put_only_and_explicit_deny(stacks: dict[str, Stack]) -> None:
+def test_bff_can_append_and_read_but_not_change(stacks: dict[str, Stack]) -> None:
     audit_id = _audit_logical_id(stacks)
     stmts = _statements(_templates(stacks)["api"])
     on_audit = [s for s in stmts if audit_id in json.dumps(s.get("Resource"))]
     allowed = {a for s in on_audit if s["Effect"] == "Allow" for a in _as_list(s["Action"])}
     denied = {a for s in on_audit if s["Effect"] == "Deny" for a in _as_list(s["Action"])}
-    assert allowed == {"dynamodb:PutItem"}
+    # Put to append; Query/Scan for the timeline, row history and admin search.
+    assert allowed == {"dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan"}
     assert set(AUDIT_FORBIDDEN_ACTIONS) <= denied
+    # The denies cover the email index too.
+    assert any("/*" in json.dumps(s["Resource"]) for s in on_audit if s["Effect"] == "Deny")
 
 
 def test_audit_table_is_protected(stacks: dict[str, Stack]) -> None:
@@ -152,3 +155,147 @@ def test_three_state_machines(stacks: dict[str, Stack]) -> None:
     Template.from_stack(stacks["workflows"]).resource_count_is(
         "AWS::StepFunctions::StateMachine", 3
     )
+
+
+def test_uploads_bucket_is_object_locked_without_default_retention(
+    stacks: dict[str, Stack],
+) -> None:
+    buckets = Template.from_stack(stacks["storage"]).find_resources("AWS::S3::Bucket")
+    uploads = [b for lid, b in buckets.items() if lid.startswith("Uploads")]
+    assert len(uploads) == 1
+    props = uploads[0]["Properties"]
+    assert props["ObjectLockEnabled"] is True
+    assert "Rule" not in props.get("ObjectLockConfiguration", {})
+    assert props["CorsConfiguration"]["CorsRules"][0]["AllowedMethods"] == ["POST"]
+
+
+def test_parse_task_wiring(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["api"])
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {"Handler": "tasks.parse_file.handler", "Timeout": 300, "MemorySize": 2048},
+    )
+    template.has_resource_properties("AWS::Lambda::EventInvokeConfig", {"MaximumRetryAttempts": 0})
+    bff = template.find_resources(
+        "AWS::Lambda::Function", {"Properties": {"Handler": "bff.handler.handler"}}
+    )
+    (bff_props,) = [r["Properties"] for r in bff.values()]
+    assert "PARSE_FUNCTION" in bff_props["Environment"]["Variables"]
+    actions = {
+        a
+        for stmt in _statements(template.to_json())
+        if stmt["Effect"] == "Allow"
+        for a in _as_list(stmt["Action"])
+    }
+    assert {"lambda:InvokeFunction", "s3:PutObjectRetention"} <= actions
+
+
+def test_dev_has_no_bedrock_access(stacks: dict[str, Stack]) -> None:
+    for name, template in _templates(stacks).items():
+        for stmt in _statements(template):
+            actions = " ".join(_as_list(stmt["Action"]))
+            assert "bedrock:" not in actions, f"{name} grants Bedrock in dev"
+
+
+def test_parse_task_reads_config() -> None:
+    app = App(context={"aws:cdk:bundling-stacks": []})
+    built = build(app, get_config("dev"), deploy_web_assets=False)
+    api_json = Template.from_stack(built["api"]).to_json()  # type: ignore[arg-type]
+    storage_json = Template.from_stack(built["storage"]).to_json()  # type: ignore[arg-type]
+    config_id = next(lid for lid in storage_json["Resources"] if lid.startswith("Config"))
+    grants = [
+        s for s in _statements(api_json)
+        if config_id in json.dumps(s.get("Resource")) and s["Effect"] == "Allow"
+    ]  # fmt: skip
+    assert any("dynamodb:GetItem" in _as_list(s["Action"]) for s in grants)
+
+
+def test_prod_parse_task_can_call_bedrock() -> None:
+    app = App(context={"aws:cdk:bundling-stacks": []})
+    built = build(app, get_config("prod"), deploy_web_assets=False)
+    api_json = Template.from_stack(built["api"]).to_json()  # type: ignore[arg-type]
+    actions = {a for s in _statements(api_json) for a in _as_list(s["Action"])}
+    assert "bedrock:InvokeModel" in actions
+
+
+def test_analyze_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    analyze = next(m for lid, m in machines.items() if lid.startswith("AnalyzeWorkflow"))
+    definition = json.dumps(analyze["Properties"]["DefinitionString"])
+    for state in ("Prepare", "JunkChecks", "Finalize", "MarkFailed", "AnalysisFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":4' in definition
+    template.has_resource_properties(
+        "AWS::Lambda::Function", {"Handler": "tasks.analyze.handler", "Timeout": 600}
+    )
+
+
+def test_bff_can_start_analysis_and_use_transactions(stacks: dict[str, Stack]) -> None:
+    api_json = Template.from_stack(stacks["api"]).to_json()
+    actions = {a for s in _statements(api_json) if s["Effect"] == "Allow"
+               for a in _as_list(s["Action"])}  # fmt: skip
+    assert "states:StartExecution" in actions
+    assert "dynamodb:ConditionCheckItem" in actions
+
+
+def test_enrich_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    enrich = next(m for lid, m in machines.items() if lid.startswith("EnrichWorkflow"))
+    definition = json.dumps(enrich["Properties"]["DefinitionString"])
+    for state in ("EnrichPrepare", "EnrichBatches", "EnrichFinalize", "EnrichMarkFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":2' in definition
+    template.has_resource_properties("AWS::Lambda::Function", {"Handler": "tasks.enrich.handler"})
+    api = Template.from_stack(stacks["api"])
+    api.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like({"ENRICH_STATE_MACHINE": Match.any_value()})
+            }
+        },
+    )
+
+
+def test_send_workflow_shape(stacks: dict[str, Stack]) -> None:
+    template = Template.from_stack(stacks["workflows"])
+    machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    send = next(m for lid, m in machines.items() if lid.startswith("SendWorkflow"))
+    definition = json.dumps(send["Properties"]["DefinitionString"])
+    for state in ("SendPrepare", "SendBatches", "SendFinalize", "SendMarkFailed"):
+        assert state in definition, state
+    assert '\\"MaxConcurrency\\":5' in definition
+    assert "only_failed" in definition
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Handler": "tasks.send.handler",
+            "Environment": {
+                "Variables": Match.object_like({"SEND_TO_PROD": "false", "INTEGRATIONS": "fake"})
+            },
+        },
+    )
+    api = Template.from_stack(stacks["api"])
+    api.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like({"SEND_STATE_MACHINE": Match.any_value()})
+            }
+        },
+    )
+
+
+def test_send_to_prod_is_refused_outside_prod() -> None:
+    from infra.config import EnvConfig
+
+    with pytest.raises(ValueError, match="send_to_prod"):
+        EnvConfig(
+            name="dev",
+            region="us-east-1",
+            send_to_prod=True,
+            integrations="fake",
+            bedrock_model_id="x",
+        )

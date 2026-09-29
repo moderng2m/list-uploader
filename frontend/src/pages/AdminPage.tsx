@@ -1,44 +1,31 @@
-import { api } from "../api/client";
-import { Async, PageHeader } from "../components/ui";
-import { useApi } from "../components/useApi";
+import { useState } from "react";
+import { PageHeader } from "../components/ui";
+import { AliasesPanel } from "./admin/AliasesPanel";
+import { AuditSearchPanel } from "./admin/AuditSearchPanel";
+import { LeadSourcesPanel } from "./admin/LeadSourcesPanel";
+import { ThresholdsPanel } from "./admin/ThresholdsPanel";
+
+const TABS = [
+  { key: "lead-sources", label: "Lead sources", panel: LeadSourcesPanel },
+  { key: "thresholds", label: "Thresholds", panel: ThresholdsPanel },
+  { key: "aliases", label: "Field aliases", panel: AliasesPanel },
+  { key: "audit", label: "Audit search", panel: AuditSearchPanel },
+] as const;
 
 export function AdminPage() {
-  const sources = useApi(api.leadSources, "lead-sources");
-  const config = useApi(api.adminConfig, "admin-config");
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("lead-sources");
+  const Panel = TABS.find((t) => t.key === tab)!.panel;
   return (
     <>
-      <PageHeader title="Admin">Changes here are audited.</PageHeader>
-      <div className="two-col">
-        <section className="card">
-          <h2>Lead sources</h2>
-          <Async state={sources}>
-            {(list) => (
-              <ul className="plain">
-                {list.map((s) => (
-                  <li key={s.value} className={s.active ? "" : "muted"}>
-                    {s.value} {!s.active && <em>(deactivated)</em>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Async>
-        </section>
-        <section className="card">
-          <h2>Thresholds</h2>
-          <Async state={config}>
-            {(c) => (
-              <dl>
-                {Object.entries(c.thresholds).map(([k, v]) => (
-                  <div key={k} className="kv">
-                    <dt>{k}</dt>
-                    <dd>{v}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </Async>
-        </section>
+      <PageHeader title="Admin">Every change here is recorded with who made it and what it was before.</PageHeader>
+      <div className="tabs" role="tablist" aria-label="Admin sections">
+        {TABS.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
       </div>
+      <Panel />
     </>
   );
 }

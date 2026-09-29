@@ -97,3 +97,25 @@ def test_event_ids_sort_by_time() -> None:
 
     assert new_ulid(1_000) < new_ulid(2_000)
     assert len(new_ulid()) == 26
+
+
+def test_ulids_are_monotonic_within_a_millisecond() -> None:
+    from shared.ids import new_ulid
+
+    ids = [new_ulid() for _ in range(2000)]
+    assert ids == sorted(ids)
+    assert len(set(ids)) == len(ids)
+
+
+def test_items_expire_with_the_retention_period() -> None:
+    from datetime import UTC, datetime
+
+    from shared.audit import Actor, AuditEvent, EventType
+
+    event = AuditEvent(
+        event_type=EventType.JOB_CREATED,
+        actor=Actor.system(),
+        occurred_at="2026-09-28T12:00:00.000Z",
+    )
+    item = event.to_item(env="dev", app_version="t", retention_days=730)
+    assert item["expires_at"] == int(datetime(2028, 9, 27, 12, tzinfo=UTC).timestamp())

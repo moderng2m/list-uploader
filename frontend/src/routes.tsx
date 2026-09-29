@@ -7,6 +7,7 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { MappingPage } from "./pages/MappingPage";
 import { ResultPage } from "./pages/ResultPage";
 import { SendPage } from "./pages/SendPage";
+import { TimelinePage } from "./pages/TimelinePage";
 import { UploadPage } from "./pages/UploadPage";
 
 export const routes: RouteObject[] = [
@@ -26,6 +27,7 @@ export const routes: RouteObject[] = [
           { path: "enrichment", element: <EnrichmentPage /> },
           { path: "send", element: <SendPage /> },
           { path: "result", element: <ResultPage /> },
+          { path: "timeline", element: <TimelinePage /> },
         ],
       },
       { path: "*", element: <Navigate to="/upload" replace /> },

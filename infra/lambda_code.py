@@ -18,10 +18,10 @@ from aws_cdk import aws_lambda as lambda_
 BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 RUNTIME = lambda_.Runtime.PYTHON_3_12
 ARCH = lambda_.Architecture.ARM_64
-PACKAGES = ("shared", "bff", "audit_archiver")
+PACKAGES = ("shared", "bff", "audit_archiver", "tasks")
 _DOCKER_BUNDLE_CMD = (
     "pip install -r requirements.txt -t /asset-output && "
-    "cp -r shared bff audit_archiver /asset-output/"
+    "cp -r shared bff audit_archiver tasks /asset-output/"
 )
 
 

@@ -1,0 +1,7 @@
+﻿Company,First name,Last Name,Email Address,Lead Source - Most Recent,SFDC Last Campaign ID,Title,Business Phone,Mobile Phone,Address 1,City,State or Province,Zip or Postal Code,Country,Notes additional Information,Zoom Individual ID,Zoom Company ID,SFDC Last Campaign Status,NAICS Code,Industry,Website,Number of Employees,SFDC List Name,Last Response Class,SFDC Last Campaign Name
+,,,,#VALUE!,,,,,,,,,,,,,,,,,,,,
+Acme Demo Co,Ada,Example,ada@acme.example,Marketing: Events,701000000000001AAA,VP Marketing,5550100100,+1 555-010-0199,1 Demo Way,Boston,MA,2134,United States,Met at booth 12,1000000001,2000000001,Attended,541511,Software,acme.example,250,Demo Conf 2026 - Booth,,Demo Conference 2026
+Globex Test Inc,José,Müller,jose.muller@globex.example,Events,701000000000001AAA,"Director, Operations",5550100101,,22 Sample St,Chicago,IL,60601,USA,,,,,522110,Financial Services,https://globex.example,1200,Demo Conf 2026 - Booth,,
+,,,,,,,,,,,,,,,,,,,,,,,,
+Initech Sample,Zoë,Placeholder,zoe@initech.example,,701000000000001AAA,CFO,,,,Austin,TX,73301,US,,,,Registered,,,,10-50,Demo Conf 2026 - Booth,,
+Umbrella Fake LLC,Linus,Sample,linus@umbrella.example,Marketing: Events,701000000000002AAA,Engineer,5550100103,,,,,,Canada,,,,,,,,75,Demo Webinar - Registrants,,

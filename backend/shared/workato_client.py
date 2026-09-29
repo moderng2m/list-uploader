@@ -4,26 +4,37 @@
 Environment guards (batch limits, `send_to_prod`) live in `BaseWorkatoClient`
 so every implementation, fakes included, enforces them before any call.
 
+Campaign lookup is the "MOps Salesforce campaign lookup" API recipe: one campaign
+ID per call. `lookup_distinct` makes one call per distinct ID, and
+`parse_campaign_lookup` reads the recipe's response, so a real client only has to
+make the HTTP call.
+
 This build uses `FakeWorkatoClient` only: no real Workato endpoints are
 configured, and no real lead data is used.
 """
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
-MAX_CAMPAIGN_IDS = 50
+from shared.observability import metrics
+from shared.sfdc_ids import check_campaign_id
+
 MAX_ENRICH_BATCH = 25
 
 
 @dataclass(frozen=True)
 class MemberStatus:
+    """One campaign member status, in the order Salesforce returns them."""
+
     label: str
     is_default: bool
     has_responded: bool
-    sort_order: int
+    id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,9 +69,7 @@ class WorkatoError(RuntimeError):
 
 
 class WorkatoClient(Protocol):
-    def lookup_campaigns(
-        self, campaign_ids: list[str], *, caller_job_id: str
-    ) -> list[Campaign]: ...
+    def lookup_campaign(self, campaign_id: str, *, caller_job_id: str) -> Campaign: ...
 
     def enrich_contacts(
         self, contacts: list[dict[str, str]], *, caller_job_id: str
@@ -77,28 +86,50 @@ def assert_send_to_prod_allowed(payload: dict[str, Any], env: str) -> None:
         )
 
 
+T = TypeVar("T")
+
+
+def _measured(call: Callable[[], T], failed: Callable[[T], bool] = lambda _: False) -> T:
+    """Every callable call counts toward the Workato error-rate alarm (SPEC §21.3.4)."""
+    t0 = time.monotonic()
+    error = True
+    try:
+        result = call()
+        error = failed(result)
+        return result
+    finally:
+        metrics.add_metric(name="WorkatoCalls", unit="Count", value=1)
+        metrics.add_metric(name="WorkatoErrors", unit="Count", value=1 if error else 0)
+        metrics.add_metric(
+            name="WorkatoLatencyMs", unit="Milliseconds", value=int((time.monotonic() - t0) * 1000)
+        )
+
+
 class BaseWorkatoClient(ABC):
     def __init__(self, env: str) -> None:
         self.env = env
 
-    def lookup_campaigns(self, campaign_ids: list[str], *, caller_job_id: str) -> list[Campaign]:
-        if len(campaign_ids) > MAX_CAMPAIGN_IDS:
-            raise ValueError(f"at most {MAX_CAMPAIGN_IDS} campaign IDs per lookup")
-        return self._lookup_campaigns(campaign_ids, caller_job_id)
+    def lookup_campaign(self, campaign_id: str, *, caller_job_id: str) -> Campaign:
+        if not campaign_id.strip():
+            raise ValueError("campaign_id is required")  # the recipe rejects blank input
+        response = _measured(lambda: self._lookup_campaign(campaign_id, caller_job_id))
+        return parse_campaign_lookup(response, campaign_id)
 
     def enrich_contacts(
         self, contacts: list[dict[str, str]], *, caller_job_id: str
     ) -> dict[str, Any]:
         if len(contacts) > MAX_ENRICH_BATCH:
             raise ValueError(f"at most {MAX_ENRICH_BATCH} contacts per enrichment batch")
-        return self._enrich_contacts(contacts, caller_job_id)
+        return _measured(lambda: self._enrich_contacts(contacts, caller_job_id))
 
     def post_to_eloqua(self, payload: dict[str, Any]) -> PostResult:
+        # The guard runs before the call and isn't counted as a call.
         assert_send_to_prod_allowed(payload, self.env)
-        return self._post_to_eloqua(payload)
+        return _measured(lambda: self._post_to_eloqua(payload), failed=lambda result: not result.ok)
 
     @abstractmethod
-    def _lookup_campaigns(self, campaign_ids: list[str], caller_job_id: str) -> list[Campaign]: ...
+    def _lookup_campaign(self, campaign_id: str, caller_job_id: str) -> dict[str, Any]:
+        """Call the recipe and return its JSON response body."""
 
     @abstractmethod
     def _enrich_contacts(
@@ -109,11 +140,53 @@ class BaseWorkatoClient(ABC):
     def _post_to_eloqua(self, payload: dict[str, Any]) -> PostResult: ...
 
 
+def lookup_distinct(
+    client: WorkatoClient, campaign_ids: Iterable[str], *, caller_job_id: str
+) -> dict[str, Campaign]:
+    """One lookup per distinct ID: 100 rows on one campaign make one call."""
+    return {
+        cid: client.lookup_campaign(cid, caller_job_id=caller_job_id)
+        for cid in sorted(set(campaign_ids))
+    }
+
+
+def parse_campaign_lookup(response: Mapping[str, Any], requested_id: str) -> Campaign:
+    """Read the lookup recipe's response. Check `valid_id` first, then
+    `campaign_exists`; `campaign` is present only when the campaign was found."""
+    if response.get("input_id") != requested_id:
+        raise WorkatoError("Campaign lookup answered for a different campaign ID")
+    if not response.get("valid_id") or not response.get("campaign_exists"):
+        return Campaign(id=requested_id, found=False)
+    campaign = response.get("campaign")
+    if not isinstance(campaign, Mapping):
+        raise WorkatoError("Campaign lookup said the campaign exists but returned no campaign")
+    statuses = campaign.get("member_statuses") or []
+    return Campaign(
+        # The app only sends 18-character IDs, which is what the recipe returns.
+        id=requested_id,
+        found=True,
+        name=campaign.get("name"),
+        type=campaign.get("type"),
+        is_active=campaign.get("is_active"),
+        status=campaign.get("status"),
+        member_statuses=tuple(
+            MemberStatus(
+                label=str(s["label"]),
+                is_default=bool(s.get("is_default")),
+                has_responded=bool(s.get("has_responded")),
+                id=s.get("id"),
+            )
+            for s in statuses
+        ),
+    )
+
+
 @dataclass
 class FakeWorkatoClient(BaseWorkatoClient):
     """In-memory Workato for tests and the mock-only deployment.
 
-    - `campaigns`: known campaigns by 18-char ID; unknown IDs return `found=False`.
+    - `campaigns`: known campaigns by 18-char ID, answered in the lookup recipe's
+      response shape; unknown IDs get `campaign_exists: false`.
     - `enrich_handler`: builds the callable's response for a batch; default is all no_match.
     - `post_status`: HTTP status per `source_record_id`; default 200.
     - `fail_enrich`: raise `WorkatoError` for every enrichment batch.
@@ -129,9 +202,35 @@ class FakeWorkatoClient(BaseWorkatoClient):
     def __post_init__(self) -> None:
         super().__init__(self.env)
 
-    def _lookup_campaigns(self, campaign_ids: list[str], caller_job_id: str) -> list[Campaign]:
-        self.calls.append(("lookup_campaigns", list(campaign_ids)))
-        return [self.campaigns.get(cid, Campaign(id=cid, found=False)) for cid in campaign_ids]
+    def _lookup_campaign(self, campaign_id: str, caller_job_id: str) -> dict[str, Any]:
+        self.calls.append(("lookup_campaign", campaign_id))
+        response: dict[str, Any] = {"input_id": campaign_id}
+        if check_campaign_id(campaign_id).value is None:
+            return {**response, "valid_id": False, "campaign_exists": False}
+        found = self.campaigns.get(campaign_id)
+        if found is None:
+            return {**response, "valid_id": True, "campaign_exists": False}
+        return {
+            **response,
+            "valid_id": True,
+            "campaign_exists": True,
+            "campaign": {
+                "id": found.id,
+                "name": found.name,
+                "type": found.type,
+                "is_active": found.is_active,
+                "status": found.status,
+                "member_statuses": [
+                    {
+                        "id": s.id,
+                        "label": s.label,
+                        "is_default": s.is_default,
+                        "has_responded": s.has_responded,
+                    }
+                    for s in found.member_statuses
+                ],
+            },
+        }
 
     def _enrich_contacts(
         self, contacts: list[dict[str, str]], caller_job_id: str

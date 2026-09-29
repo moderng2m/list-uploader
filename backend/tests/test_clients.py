@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from shared.analysis_store import campaign_info
 from shared.bedrock_client import FakeBedrockClient, Outcome
+from shared.fake_sfdc import CAMPAIGNS
 from shared.workato_client import (
     Campaign,
     FakeWorkatoClient,
     SendToProdViolation,
     WorkatoError,
+    lookup_distinct,
+    parse_campaign_lookup,
 )
 
 
@@ -90,21 +96,93 @@ class TestWorkato:
         client = FakeWorkatoClient(post_status={"j_1:2": 500})
         assert not client.post_to_eloqua({"source_record_id": "j_1:2", "send_to_prod": False}).ok
 
-    def test_lookup_returns_entry_for_every_id(self) -> None:
+    def test_lookup_found_and_not_found(self) -> None:
         known = Campaign(id="701000000000001AAA", found=True, name="Test Event")
         client = FakeWorkatoClient(campaigns={known.id: known})
-        result = client.lookup_campaigns([known.id, "701000000000002AAA"], caller_job_id="j_1")
-        assert [c.found for c in result] == [True, False]
+        assert client.lookup_campaign(known.id, caller_job_id="j_1").found is True
+        assert client.lookup_campaign("701000000000002AAA", caller_job_id="j_1").found is False
+        assert client.calls == [
+            ("lookup_campaign", "701000000000001AAA"),
+            ("lookup_campaign", "701000000000002AAA"),
+        ]
+
+    def test_lookup_distinct_calls_once_per_campaign(self) -> None:
+        client = FakeWorkatoClient(campaigns=dict(CAMPAIGNS))
+        ids = ["701000000000001AAA"] * 100 + ["701000000000002AAA"] * 3
+        found = lookup_distinct(client, ids, caller_job_id="j_1")
+        assert set(found) == {"701000000000001AAA", "701000000000002AAA"}
+        assert len(client.calls) == 2
+
+    def test_blank_campaign_id_is_not_sent(self) -> None:
+        client = FakeWorkatoClient()
+        with pytest.raises(ValueError):
+            client.lookup_campaign(" ", caller_job_id="j_1")
+        assert client.calls == []
 
     def test_batch_limits(self) -> None:
         client = FakeWorkatoClient()
         with pytest.raises(ValueError):
             client.enrich_contacts([{}] * 26, caller_job_id="j_1")
-        with pytest.raises(ValueError):
-            client.lookup_campaigns(["x"] * 51, caller_job_id="j_1")
 
     def test_whole_batch_enrichment_error(self) -> None:
         with pytest.raises(WorkatoError):
             FakeWorkatoClient(fail_enrich=True).enrich_contacts(
                 [{"source_record_id": "1"}], caller_job_id="j_1"
             )
+
+
+# The campaign lookup recipe's response shape, from a sample the recipe owner
+# shared. Values are synthetic; the extra Salesforce fields are ignored.
+RECIPE_RESPONSE: dict[str, Any] = {
+    "input_id": "701000000000001AAA",
+    "campaign": {
+        "id": "701000000000001AAA",
+        "name": "Demo Conference 2026",
+        "type": "Marketing: Events",
+        "status": "In Progress",
+        "is_active": False,
+        "record_type_id": "012000000000001AAA",
+        "created_date": "2026-09-23T19:10:35.000000+00:00",
+        "budgeted_cost": 100.0,
+        "expected_revenue": "",
+        "number_of_leads": 1.0,
+        "member_statuses": [
+            {"id": "01Y000000000001AAA", "label": "Sent", "is_default": True,
+             "has_responded": False},
+            {"id": "01Y000000000002AAA", "label": "Responded", "is_default": False,
+             "has_responded": True},
+        ],
+    },
+    "campaign_exists": True,
+    "valid_id": True,
+}  # fmt: skip
+
+
+class TestCampaignLookupResponse:
+    def test_found(self) -> None:
+        c = parse_campaign_lookup(RECIPE_RESPONSE, "701000000000001AAA")
+        assert (c.found, c.name, c.type, c.is_active, c.status) == (
+            True, "Demo Conference 2026", "Marketing: Events", False, "In Progress",
+        )  # fmt: skip
+        # Salesforce's order is kept; the default is the one flagged.
+        assert [s.label for s in c.member_statuses] == ["Sent", "Responded"]
+        info = campaign_info(c)
+        assert info.statuses == ("Sent", "Responded") and info.default_status == "Sent"
+
+    def test_invalid_id_and_not_found(self) -> None:
+        cid = "701000000000009AAA"
+        for response in (
+            {"input_id": cid, "valid_id": False, "campaign_exists": False},
+            {"input_id": cid, "valid_id": True, "campaign_exists": False},
+        ):
+            c = parse_campaign_lookup(response, cid)
+            assert c.found is False and c.id == cid
+
+    def test_answer_for_another_id_is_an_error(self) -> None:
+        with pytest.raises(WorkatoError):
+            parse_campaign_lookup(RECIPE_RESPONSE, "701000000000002AAA")
+
+    def test_exists_without_campaign_is_an_error(self) -> None:
+        response = {"input_id": "701000000000001AAA", "valid_id": True, "campaign_exists": True}
+        with pytest.raises(WorkatoError):
+            parse_campaign_lookup(response, "701000000000001AAA")

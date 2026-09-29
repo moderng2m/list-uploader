@@ -1,0 +1,9 @@
+Company,First name,Last Name,Email Address,SFDC Last Campaign ID,SFDC Last Campaign Status,Lead Source - Most Recent,Business Phone,Zip or Postal Code,Country
+Acme Demo Co,Ada,Example,ada@acme.example,701000000000001,,Events,555-010-0100,2134,USA
+Globex Test Inc,Grace,Sample,grace@globex.example,701000000000001AAB,Attended,Marketing: Events,,,
+Initech Sample,Alan,Placeholder,alan@initech.example,701000000000009AAA,Registered,Marketing: Events,,,
+Acme Demo Co,Ada,Example,ADA@acme.example,701000000000001AAA,Attended,Marketing: Events,,,
+asdf,Test,Test,test@umbrella.example,701000000000001AAA,Attended,Marketing: Events,,,
+Hooli Example,Linus,Sample,linus@hooli.example,701000000000002AAA,Atended,Webcast,,,
+,Kay,Sample,kay@pied.example,701000000000001AAA,Registered,Marketing: Events,,,
+Vandelay Demo,Art,Sample,info@vandelay.example,701000000000003AAA,Attended,Marketing: Events,12345,,
