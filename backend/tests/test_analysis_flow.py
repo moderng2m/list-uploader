@@ -175,6 +175,26 @@ class TestResults:
         # Rows eligible for enrichment: ready, warning, pending (not blocked for other reasons).
         assert view["enrichment_lookup_count"] == 3
 
+    def test_grid_shows_every_column_of_the_file(self, app_env: Env) -> None:
+        job_id = _analyzed(app_env)
+        job = app_env.jobs.get(job_id)
+        assert job is not None
+        _, view = call(http_event("GET", f"/jobs/{job_id}/analysis", email=OWNER))
+        columns = view["columns"]
+        from_file = [c for c in columns if c["kind"] != "filled"]
+        # Every column of the file, in the file's order, under the file's header.
+        assert [c["source_header"] for c in from_file] == job["parse"]["headers"]
+        mapped = {c["key"] for c in from_file if c["kind"] == "mapped"}
+        filled = [c for c in columns if c["kind"] == "filled"]
+        assert columns[len(from_file) :] == filled  # filled-in fields come last
+        # Required fields the app fills in are shown even when no column maps to them.
+        for key in ("lead_source", "campaign_status", "list_name", "campaign_name"):
+            assert key in mapped or key in {c["key"] for c in filled}, key
+        assert not mapped & {c["key"] for c in filled}
+        by_key = {c["key"]: c for c in columns if c["key"]}
+        assert by_key["campaign_name"]["editable"] is False
+        assert by_key["email"]["editable"] is True
+
     def test_row_filters(self, app_env: Env) -> None:
         job_id = _analyzed(app_env)
         assert set(_rows(job_id, issue_code="CAMPAIGN_NOT_FOUND")) == {4}
@@ -409,6 +429,13 @@ class TestRemapAfterAnalysis:
         rows = _rows(job_id)
         assert "phone" not in rows[2]["processed"]
         assert rows[3]["processed"]["campaign_id"] == EVENTS_ID  # the user's edit survives
+        # The ignored column still shows in the grid, read only, with its values.
+        _, analysis = call(http_event("GET", f"/jobs/{job_id}/analysis", email=OWNER))
+        phone = next(c for c in analysis["columns"] if c["source_header"] == "Business Phone")
+        assert phone == {"kind": "ignored", "key": None, "label": "Business Phone",
+                         "source_header": "Business Phone", "editable": False}  # fmt: skip
+        assert rows[2]["unmapped"]["Business Phone"]
+        assert "Business Phone" not in rows[2]["source"]
 
     def test_saving_the_same_mapping_changes_nothing(self, app_env: Env) -> None:
         job_id = _analyzed(app_env)

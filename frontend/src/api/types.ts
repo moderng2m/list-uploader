@@ -151,6 +151,8 @@ export interface Row {
   user_edits: { field: string; from: string; to: string; by: string; at: string }[];
   dismissed: string[];
   send?: { status: SendStatus; attempts?: number; error?: string };
+  /** Values of the columns the user chose to ignore, by header. */
+  unmapped?: Record<string, string>;
 }
 
 export interface RowsPage {
@@ -181,6 +183,17 @@ export interface Analysis {
   enrichment_lookup_count: number;
   notes: string[];
   normalizer_version: string | null;
+  /** The Rows grid's columns: the file's in file order, then fields the app filled. */
+  columns?: GridColumn[];
+}
+
+export interface GridColumn {
+  kind: "mapped" | "ignored" | "filled";
+  /** Field key; null for an ignored column. */
+  key: string | null;
+  label: string;
+  source_header: string | null;
+  editable: boolean;
 }
 
 export interface RowChange {

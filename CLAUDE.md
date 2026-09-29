@@ -190,6 +190,10 @@ Decisions made while building P3 (spec gaps):
 - NOT_SENT_FIELD is one info issue per row listing every unsent field (OQ-1).
 - FIELD_FORMAT_INVALID (warning) is new: SPEC §11.2 values that can't be used.
 - The lead source list is a placeholder until admins maintain it (P6).
+- The Rows grid shows every column of the file: `GET /analysis` returns `columns`
+  (file order under the user's headers, ignored ones read only, then required
+  fields the app fills in and any other field a row has a value for), and each row
+  carries `unmapped` (ignored columns' values by header).
 
 ## Enrichment (P4)
 

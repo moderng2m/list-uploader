@@ -227,6 +227,18 @@ export const analysis: Analysis = {
   enrichment_lookup_count: 3,
   notes: [],
   normalizer_version: "stand-in-0.1 (NOT lead normalizer v5)",
+  columns: [
+    { kind: "mapped", key: "company", label: "Company", source_header: "Company", editable: true },
+    { kind: "mapped", key: "first_name", label: "First name", source_header: "First name", editable: true },
+    { kind: "mapped", key: "last_name", label: "Last Name", source_header: "Last Name", editable: true },
+    { kind: "mapped", key: "email", label: "Email Address", source_header: "E-mail", editable: true },
+    { kind: "ignored", key: null, label: "Badge Color", source_header: "Badge Color", editable: false },
+    { kind: "mapped", key: "campaign_id", label: "SFDC Last Campaign ID", source_header: "Campaign ID", editable: true },
+    { kind: "mapped", key: "campaign_status", label: "SFDC Last Campaign Status", source_header: "Status", editable: true },
+    { kind: "mapped", key: "lead_source", label: "Lead Source - Most Recent", source_header: "Lead Source", editable: true },
+    { kind: "filled", key: "list_name", label: "SFDC List Name", source_header: null, editable: true },
+    { kind: "filled", key: "campaign_name", label: "SFDC Last Campaign Name", source_header: null, editable: false },
+  ],
   lead_sources: ["Marketing: Events", "Marketing: Webinar", "Marketing: Content Syndication", "Marketing: Paid Social", "Marketing: Website", "Sales: Outbound"],
   issue_groups: [
     { code: "CAMPAIGN_ID_FORMAT", severity: "blocking", count: 1, explanation: "The campaign ID is mistyped or isn't a campaign ID.", bulk_action: null, bulk_action_label: null },

@@ -1,21 +1,25 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Analysis, BulkAction, CampaignCard, Issue, Row, RowChange } from "../api/types";
+import type { Analysis, BulkAction, CampaignCard, GridColumn, Issue, Row, RowChange } from "../api/types";
 import { Async, PageHeader, SeverityBadge, StatusBadge, SummaryCards } from "../components/ui";
 import { RowHistoryDrawer } from "../components/RowHistoryDrawer";
 import { useApi } from "../components/useApi";
 import { useJobPoll } from "../components/useJobPoll";
 
-const GRID_FIELDS: { key: string; label: string }[] = [
-  { key: "company", label: "Company" },
-  { key: "first_name", label: "First" },
-  { key: "last_name", label: "Last" },
-  { key: "email", label: "Email" },
-  { key: "campaign_id", label: "Campaign ID" },
-  { key: "campaign_status", label: "Status" },
-  { key: "lead_source", label: "Lead source" },
-];
+// Used only if the server doesn't describe the columns.
+const FALLBACK_COLUMNS: GridColumn[] = [
+  ["company", "Company"],
+  ["first_name", "First name"],
+  ["last_name", "Last Name"],
+  ["email", "Email Address"],
+  ["campaign_id", "SFDC Last Campaign ID"],
+  ["campaign_status", "SFDC Last Campaign Status"],
+  ["lead_source", "Lead Source - Most Recent"],
+].map(([key, label]) => ({ kind: "mapped", key: key!, label: label!, source_header: null, editable: true }));
+
+const gridColumns = (analysis: Analysis) => analysis.columns ?? FALLBACK_COLUMNS;
+const columnId = (c: GridColumn) => c.key ?? `ignored:${c.source_header}`;
 const PAGE = 100;
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>;
@@ -293,6 +297,11 @@ function RowsGrid({
   const [historyOf, setHistoryOf] = useState<number | null>(null);
   if (rows.length === 0) return <p className="muted">No rows match.</p>;
   return (
+    <>
+    <p className="muted grid-hint">
+      {gridColumns(analysis).length} columns: your file's columns in order, then fields filled in for you. Scroll
+      sideways to see them all.
+    </p>
     <div className="table-wrap">
       {historyOf != null && <RowHistoryDrawer jobId={jobId} rowId={historyOf} onClose={() => setHistoryOf(null)} />}
       <table className="grid rows-grid">
@@ -301,8 +310,8 @@ function RowsGrid({
             <th>Row</th>
             <th>Status</th>
             <th />
-            {GRID_FIELDS.map((f) => (
-              <th key={f.key}>{f.label}</th>
+            {gridColumns(analysis).map((c) => (
+              <ColumnHeader key={columnId(c)} column={c} />
             ))}
           </tr>
         </thead>
@@ -321,6 +330,29 @@ function RowsGrid({
         </tbody>
       </table>
     </div>
+    </>
+  );
+}
+
+function ColumnHeader({ column: c }: { column: GridColumn }) {
+  if (c.kind === "ignored")
+    return (
+      <th className="ignored-cell" title="You chose to ignore this column in step 1. It isn't used or sent.">
+        {c.label}<span className="col-note">not used</span>
+      </th>
+    );
+  if (c.kind === "filled")
+    return (
+      <th title="Not in your file: the app filled this in.">
+        {c.label}<span className="col-note">filled in</span>
+      </th>
+    );
+  const renamed = c.source_header && c.source_header !== c.label;
+  return (
+    <th title={renamed ? `Your column “${c.source_header}”, mapped to ${c.label}` : undefined}>
+      {c.source_header ?? c.label}
+      {renamed && <span className="col-note">→ {c.label}</span>}
+    </th>
   );
 }
 
@@ -343,7 +375,13 @@ function RowLine({
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   function startEdit() {
-    setDraft(Object.fromEntries(GRID_FIELDS.map((f) => [f.key, row.processed[f.key] ?? ""])));
+    setDraft(
+      Object.fromEntries(
+        gridColumns(analysis)
+          .filter((c) => c.editable && c.key)
+          .map((c) => [c.key!, row.processed[c.key!] ?? ""]),
+      ),
+    );
     setEditing(true);
   }
   function save() {
@@ -395,12 +433,21 @@ function RowLine({
           </button>
         )}
       </td>
-      {GRID_FIELDS.map((f) => {
+      {gridColumns(analysis).map((c) => {
+        if (!c.key) {
+          const raw = row.unmapped?.[c.source_header ?? ""] ?? "";
+          return (
+            <td key={columnId(c)} className="ignored-cell">
+              {raw}
+            </td>
+          );
+        }
+        const f = { key: c.key, label: c.source_header ?? c.label };
         const value = row.processed[f.key] ?? "";
         const source = row.source[f.key] ?? "";
         return (
           <td key={f.key}>
-            {editing ? (
+            {editing && c.editable ? (
               f.key === "lead_source" ? (
                 <select
                   aria-label={`${f.label} for row ${row.row_id}`}
@@ -431,7 +478,7 @@ function RowLine({
     </tr>
     {visible.length > 0 && (
       <tr className={`row-issues ${row.excluded ? "excluded" : ""}`} data-issues-for={row.row_id}>
-        <td colSpan={GRID_FIELDS.length + 3}>
+        <td colSpan={gridColumns(analysis).length + 3}>
           {visible.map((i) => (
             <IssueLine key={`${i.code}:${i.field}`} issue={i} row={row} analysis={analysis} editable={editable && !editing}
               onChange={onChange} onBulk={onBulk} />

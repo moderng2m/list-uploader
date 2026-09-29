@@ -152,6 +152,11 @@ aside h3 { margin-top: 1rem; font-size: 0.95rem; }
 .rows-grid input:not([type="checkbox"]), .rows-grid select { width: 100%; min-width: 7rem; font: inherit; padding: 0.2rem; }
 .rows-grid tr.excluded td { opacity: 0.55; }
 .was { color: var(--muted); font-size: 0.8em; }
+.col-note { display: block; color: var(--muted); font-size: 0.75em; font-weight: normal; }
+.ignored-cell { color: var(--muted); }
+.grid-hint { font-size: 0.85em; margin: 0 0 0.4rem; }
+/* Keep the row number in view while scrolling sideways through many columns. */
+.rows-grid tr.row-main > td:first-child, .rows-grid thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
 .rows-grid tr.row-main.has-issues td { border-bottom: none; padding-bottom: 0.2rem; }
 .rows-grid tr.row-issues td { padding-top: 0; padding-left: 2.5rem; }
 .row-issue { font-size: 0.85em; margin-bottom: 0.35rem; }

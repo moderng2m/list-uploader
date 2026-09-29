@@ -17,7 +17,7 @@ describe("every route renders with mock data", () => {
   it.each([
     ["/upload", "Upload a lead list", "Enrich leads with ZoomInfo"],
     [job("mapping"), "Map your columns", "Job Position"],
-    [job("analysis"), "Analyze and fix", "Demo Conference 2026"],
+    [job("analysis"), "Analyze and fix", "CAMPAIGN_NOT_FOUND"],
     [job("enrichment"), "Enrichment results", "Enrichment hasn't run yet."],
     [job("send"), "Review and send", "You can't send yet"],
     ["/jobs/j_01JDEMO0000000000000000001/result", "Result", "40 leads submitted to Eloqua"],

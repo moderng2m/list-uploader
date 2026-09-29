@@ -43,6 +43,27 @@ describe("analysis review", () => {
     expect(screen.getByText(/Enrichment will look up 3 contacts in ZoomInfo/)).toBeInTheDocument();
   });
 
+  it("shows every column of the file, ignored ones and filled-in fields too", async () => {
+    renderAnalysis();
+    const table = await screen.findByRole("table");
+    const headers = within(table).getAllByRole("columnheader").map((th) => th.textContent);
+    expect(headers.slice(3)).toEqual([
+      "Company", "First name", "Last Name", "E-mail→ Email Address", "Badge Colornot used",
+      "Campaign ID→ SFDC Last Campaign ID", "Status→ SFDC Last Campaign Status", "Lead Source→ Lead Source - Most Recent",
+      "SFDC List Namefilled in", "SFDC Last Campaign Namefilled in",
+    ]);
+    // Ignored column values are shown; filled-in values too.
+    expect(within(rowOf(2)).getByText("green")).toBeInTheDocument();
+    expect(within(rowOf(2)).getAllByText("Demo Conference 2026").length).toBeGreaterThan(0);
+
+    // Editing covers every editable column, but not ignored or Salesforce-only ones.
+    await userEvent.setup().click(screen.getByRole("button", { name: "Edit row 2" }));
+    expect(screen.getByLabelText("E-mail for row 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("SFDC List Name for row 2")).toBeInTheDocument();
+    expect(screen.queryByLabelText("SFDC Last Campaign Name for row 2")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Badge Color for row 2")).not.toBeInTheDocument();
+  });
+
   it("counts rows per issue, and values when a row has several", async () => {
     server.use(
       http.get("/api/jobs/:id/analysis", () =>

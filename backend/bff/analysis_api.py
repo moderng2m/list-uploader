@@ -29,7 +29,7 @@ from shared.analysis_store import (
     row_item,
 )
 from shared.audit import Actor, AuditEvent, EventType
-from shared.catalog import BY_KEY, CATALOG_VERSION
+from shared.catalog import BY_KEY, CATALOG_VERSION, FIELDS
 from shared.enrichment import eligible
 from shared.issue_catalog import BULK_ACTION_LABELS, EXPLANATIONS, bulk_action_for
 from shared.jobs import JobState, now_iso
@@ -122,7 +122,57 @@ def row_view(row: Mapping[str, Any], mapping: Mapping[str, str]) -> dict[str, An
         "user_edits": row.get("user_edits", []),
         "dismissed": row.get("dismissed", []),
         "send": row.get("send") or {"status": "not_sent"},
+        # Columns the user chose to ignore, by header, so the grid can show every
+        # column of the file.
+        "unmapped": {h: str(v) for h, v in (row.get("source") or {}).items() if h not in mapping},
     }
+
+
+def grid_columns(job: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The Rows grid's columns: the file's columns in file order (ignored ones
+    included, read only), then fields the app filled in that no column maps to."""
+    confirmed = (job.get("mapping_confirmed") or {}).get("columns", [])
+    columns: list[dict[str, Any]] = []
+    mapped: set[str] = set()
+    for c in confirmed:
+        key = c.get("field_key")
+        header = c["source_header"]
+        if key:
+            mapped.add(key)
+            columns.append(
+                {
+                    "kind": "mapped",
+                    "key": key,
+                    "label": BY_KEY[key].label if key in BY_KEY else key,
+                    "source_header": header,
+                    "editable": key in BY_KEY and key not in NOT_EDITABLE,
+                }
+            )
+        else:
+            columns.append(
+                {
+                    "kind": "ignored",
+                    "key": None,
+                    "label": header,
+                    "source_header": header,
+                    "editable": False,
+                }
+            )
+    present = {k for r in rows for k, v in (r.get("processed") or {}).items() if v}
+    for f in FIELDS:
+        if f.key in mapped:
+            continue
+        if f.fill_when_unmapped is not None or f.key in present:
+            columns.append(
+                {
+                    "kind": "filled",
+                    "key": f.key,
+                    "label": f.label,
+                    "source_header": None,
+                    "editable": f.key not in NOT_EDITABLE,
+                }
+            )
+    return columns
 
 
 def _reviewable(job: Mapping[str, Any]) -> bool:
@@ -183,6 +233,7 @@ def get_analysis(job_id: str) -> Any:
         "enrichment_lookup_count": sum(1 for r in rows if eligible(r)) if job.get("enrich") else 0,
         "notes": job.get("analysis_notes", []),
         "normalizer_version": context.get("normalizer_version"),
+        "columns": grid_columns(job, rows),
     }
 
 

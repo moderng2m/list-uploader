@@ -49,6 +49,10 @@ export function mockAnalysis() {
   };
 }
 
+// The demo file's ignored column (see `analysis.columns`).
+const BADGES = ["blue", "red", "green"];
+const withIgnored = (r: Row): Row => ({ ...r, unmapped: r.unmapped ?? { "Badge Color": BADGES[r.row_id % BADGES.length]! } });
+
 export function mockRows(params: URLSearchParams) {
   let out = rows;
   const status = params.get("status");
@@ -59,7 +63,13 @@ export function mockRows(params: URLSearchParams) {
   if (campaign) out = out.filter((r) => r.processed.campaign_id === campaign);
   const offset = Number(params.get("offset") ?? 0);
   const limit = Number(params.get("limit") ?? 100);
-  return { total: out.length, offset, rows: out.slice(offset, offset + limit) };
+  return {
+    total: out.length,
+    offset,
+    rows: out
+      .slice(offset, offset + limit)
+      .map(withIgnored),
+  };
 }
 
 function apply(r: Row, change: RowChange): Row {
@@ -83,7 +93,7 @@ export function mockEdit(rowId: number, change: RowChange) {
   const index = rows.findIndex((r) => r.row_id === rowId);
   if (index < 0) return null;
   rows[index] = apply(rows[index]!, change);
-  return { row: rows[index], also_changed: [] as number[] };
+  return { row: withIgnored(rows[index]!), also_changed: [] as number[] };
 }
 
 export function mockBulk(action: BulkAction, params: Record<string, unknown>) {
